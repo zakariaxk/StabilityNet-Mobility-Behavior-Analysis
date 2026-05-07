@@ -12,8 +12,9 @@ Phase 1: offline backend video detection pipeline.
 - OpenCV frame ingestion and JSON probe output.
 - YOLOv8n person detector boundary and Phase 1C detection output.
 - SORT-style tracking with stable track IDs and JSON track summaries.
+- Temporal feature extraction for dwell time, pixel speed, and position variance.
 
 ## Next
 
-- Add temporal behavior features and event scoring.
+- Add event scoring.
 - Add focused tests for feature extraction and scoring.

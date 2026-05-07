@@ -31,6 +31,7 @@ logic.
 ## Module Boundaries
 
 - `app.pipeline`: orchestration, frame ingestion, and result writing.
+- `app.behavior`: track histories, temporal features, and event scoring.
 - `app.vision`: detector and tracker implementations.
 - `app.schemas`: stable data contracts between pipeline stages.
 - `app.utils`: small math and geometry helpers shared by pipeline stages.

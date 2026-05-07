@@ -7,6 +7,8 @@ from pathlib import Path
 
 from app import __version__
 from app.config import AnalysisRequest
+from app.pipeline.frame_reader import VideoDependencyError, VideoOpenError
+from app.vision.detector import DetectorDependencyError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,7 +34,10 @@ def main(argv: list[str] | None = None) -> int:
         from app.pipeline.video_pipeline import analyze_video
 
         request = AnalysisRequest(video_path=args.video, output_path=args.output)
-        result = analyze_video(request)
+        try:
+            result = analyze_video(request)
+        except (DetectorDependencyError, VideoDependencyError, VideoOpenError) as exc:
+            parser.exit(2, f"error: {exc}\n")
         print(
             "analysis written to "
             f"{args.output} ({result['frames_processed']} frames processed)"

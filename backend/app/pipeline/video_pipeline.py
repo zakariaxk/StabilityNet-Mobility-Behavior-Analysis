@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from app.config import AnalysisRequest
 from app.pipeline.frame_reader import VideoFrameReader
 from app.pipeline.result_writer import write_json
+from app.vision.yolo_detector import YOLOPersonDetector
 
 
 def analyze_video(request: AnalysisRequest) -> dict[str, object]:
@@ -21,19 +22,29 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         fallback_fps=request.config.fallback_fps,
     )
     metadata = reader.metadata()
+    detector = YOLOPersonDetector(request.config.detector)
 
     frames_processed = 0
-    for _frame in reader.frames(max_frames=request.config.max_frames):
+    frame_summaries: list[dict[str, object]] = []
+    for frame in reader.frames(max_frames=request.config.max_frames):
+        detections = detector.detect(frame.image)
+        frame_summaries.append(
+            {
+                "frame_index": frame.index,
+                "timestamp_s": frame.timestamp_s,
+                "detections": [detection.to_dict() for detection in detections],
+            }
+        )
         frames_processed += 1
 
     result: dict[str, object] = {
-        "analysis_version": "phase-1b",
+        "analysis_version": "phase-1c",
         "created_at": datetime.now(UTC).isoformat(),
         "video": metadata.to_dict(),
         "frames_processed": frames_processed,
+        "frames": frame_summaries,
         "tracks": [],
         "events": [],
     }
     write_json(request.output_path, result)
     return result
-

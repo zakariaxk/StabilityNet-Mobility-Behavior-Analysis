@@ -8,3 +8,5 @@
   as real-world gait speed without camera calibration.
 - Keep command-line analysis functional as each pipeline layer lands. This makes
   later detector and tracker integration easier to validate.
+- Vision dependencies should fail with explicit setup guidance. Minimal local
+  environments may not have OpenCV or Ultralytics installed yet.

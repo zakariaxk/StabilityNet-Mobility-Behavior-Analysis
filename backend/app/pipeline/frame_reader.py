@@ -94,10 +94,10 @@ class VideoFrameReader:
             capture.release()
 
     def _open_capture(self) -> Any:
-        cv = _require_cv2()
         if not self.video_path.exists():
             raise VideoOpenError(f"video file does not exist: {self.video_path}")
 
+        cv = _require_cv2()
         capture = cv.VideoCapture(str(self.video_path))
         if not capture.isOpened():
             capture.release()

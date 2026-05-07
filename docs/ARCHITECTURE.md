@@ -28,3 +28,8 @@ The analysis pipeline must stay independent from FastAPI. API endpoints can call
 the pipeline later, but they should not contain detection, tracking, or behavior
 logic.
 
+## Module Boundaries
+
+- `app.pipeline`: orchestration, frame ingestion, and result writing.
+- `app.vision`: detector and tracker implementations.
+- `app.schemas`: stable data contracts between pipeline stages.

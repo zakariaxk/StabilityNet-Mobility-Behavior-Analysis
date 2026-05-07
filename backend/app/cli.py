@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from app import __version__
+from app.config import AnalysisRequest
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,7 +29,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
-        parser.error("analysis pipeline is not implemented yet")
+        from app.pipeline.video_pipeline import analyze_video
+
+        request = AnalysisRequest(video_path=args.video, output_path=args.output)
+        result = analyze_video(request)
+        print(
+            "analysis written to "
+            f"{args.output} ({result['frames_processed']} frames processed)"
+        )
+        return 0
 
     parser.print_help()
     return 0
@@ -36,4 +45,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

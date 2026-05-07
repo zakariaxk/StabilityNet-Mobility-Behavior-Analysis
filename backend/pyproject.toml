@@ -23,10 +23,10 @@ dev = [
 [project.scripts]
 stabilitynet = "app.cli:main"
 
-[tool.setuptools]
-packages = ["app"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-

@@ -18,9 +18,12 @@ SORT-style tracking is lightweight and enough to create persistent identities
 for Phase 1 behavior features. More robust re-identification is deferred until
 occlusion and identity-switch problems are measured.
 
+The first tracker uses greedy IoU association with SORT-style track lifecycle
+settings. A full Kalman filter and Hungarian assignment can replace this module
+later if identity switches become a measured problem.
+
 ## ADR-004: Use Heuristic Event Scoring Initially
 
 Phase 1 event scoring uses transparent thresholds for dwell time, speed, and
 position variance. Learned anomaly models are deferred until the project has
 real outputs and evaluation data.
-

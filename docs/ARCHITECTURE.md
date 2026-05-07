@@ -33,3 +33,4 @@ logic.
 - `app.pipeline`: orchestration, frame ingestion, and result writing.
 - `app.vision`: detector and tracker implementations.
 - `app.schemas`: stable data contracts between pipeline stages.
+- `app.utils`: small math and geometry helpers shared by pipeline stages.

@@ -212,6 +212,11 @@ tempCodeRunnerFile.py
 # macOS
 .DS_Store
 
+# Local sample videos and generated analysis output
+backend/samples/*
+!backend/samples/README.md
+backend/outputs/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

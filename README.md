@@ -19,7 +19,7 @@ The system analyzes how individuals move over time by extracting temporal featur
 - Python, PyTorch, OpenCV
 - YOLOv8n (Ultralytics)
 - FastAPI, Redis, PostgreSQL
-- React, TypeScript
+- Next.js, TypeScript
 
 ## Goal
 

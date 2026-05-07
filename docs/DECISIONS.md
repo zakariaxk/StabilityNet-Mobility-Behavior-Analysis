@@ -30,3 +30,16 @@ real outputs and evaluation data.
 
 The pipeline emits the first occurrence of each event type per track to keep
 offline JSON output readable. Richer event lifecycle semantics are deferred.
+
+## ADR-005: Keep Phase 2 API Synchronous And Local
+
+The first API accepts a local video path, runs the existing pipeline
+synchronously, and stores JSON records on disk. Upload handling, Redis queues,
+PostgreSQL persistence, and frontend integration are deferred until real local
+video output has been inspected.
+
+## ADR-006: Add API Summary Fields Before Persistence
+
+API records include compact frame, track, and event counts so UI clients do not
+need to infer basic totals from the full nested pipeline output. This remains a
+disk-backed Phase 2 contract and does not require Redis or PostgreSQL.

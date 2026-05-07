@@ -28,9 +28,20 @@ The analysis pipeline must stay independent from FastAPI. API endpoints can call
 the pipeline later, but they should not contain detection, tracking, or behavior
 logic.
 
+## Phase 2 API Flow
+
+```text
+POST /analyses with local video path
+  -> synchronous pipeline run
+  -> JSON record written under backend/outputs/analyses
+  -> analysis ID and compact summary returned
+  -> GET /analyses/{analysis_id} retrieves the saved record
+```
+
 ## Module Boundaries
 
 - `app.pipeline`: orchestration, frame ingestion, and result writing.
+- `app.api`: FastAPI routes and local result-record service.
 - `app.behavior`: track histories, temporal features, and event scoring.
 - `app.vision`: detector and tracker implementations.
 - `app.schemas`: stable data contracts between pipeline stages.

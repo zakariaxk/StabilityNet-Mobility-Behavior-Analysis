@@ -1,0 +1,91 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app.api.analysis_service import AnalysisService
+from app.config import AnalysisRequest
+from app.main import create_app
+from app.pipeline.result_writer import write_json
+
+
+def fake_runner(request: AnalysisRequest) -> dict[str, object]:
+    result = {
+        "analysis_version": "test",
+        "video": {"path": str(request.video_path)},
+        "frames_processed": 0,
+        "frames": [],
+        "tracks": [],
+        "events": [
+            {
+                "event_type": "low_mobility_speed",
+                "severity": "medium",
+                "track_id": 1,
+            }
+        ],
+    }
+    write_json(request.output_path, result)
+    return result
+
+
+class ApiTests(unittest.TestCase):
+    def test_creates_and_retrieves_analysis_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            create_response = client.post(
+                "/analyses",
+                json={"video_path": "samples/test-video.mp4"},
+            )
+
+            self.assertEqual(create_response.status_code, 201)
+            created = create_response.json()
+            self.assertEqual(created["status"], "completed")
+            self.assertEqual(created["video_path"], "samples/test-video.mp4")
+            self.assertEqual(created["result"]["analysis_version"], "test")
+            self.assertEqual(created["summary"]["frames_processed"], 0)
+            self.assertEqual(created["summary"]["track_count"], 0)
+            self.assertEqual(created["summary"]["event_count"], 1)
+            self.assertEqual(
+                created["summary"]["event_counts_by_type"],
+                {"low_mobility_speed": 1},
+            )
+
+            get_response = client.get(f"/analyses/{created['analysis_id']}")
+
+            self.assertEqual(get_response.status_code, 200)
+            self.assertEqual(get_response.json()["analysis_id"], created["analysis_id"])
+
+    def test_returns_404_for_missing_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.get("/analyses/00000000-0000-0000-0000-000000000000")
+
+            self.assertEqual(response.status_code, 404)
+
+    def test_allows_local_nextjs_dev_origin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.options(
+                "/health",
+                headers={
+                    "Origin": "http://localhost:3000",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.headers["access-control-allow-origin"],
+                "http://localhost:3000",
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -21,10 +21,9 @@
 
 ## Phase 4: Review UI
 
-- Add a React/TypeScript interface for uploading videos and reviewing events.
+- Add a Next.js/TypeScript interface for uploading videos and reviewing events.
 
 ## Phase 5: Calibration And Robustness
 
 - Add camera calibration, smoothing improvements, better occlusion handling, and
   richer evaluation datasets.
-

@@ -24,6 +24,5 @@ phase and prefer clear, testable modules over broad infrastructure.
 - FastAPI
 - Redis
 - PostgreSQL
-- React
+- Next.js
 - TypeScript
-

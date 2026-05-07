@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 1: offline backend video detection pipeline.
+Phase 2: minimal synchronous API over the offline backend pipeline.
 
 ## Completed
 
@@ -16,8 +16,13 @@ Phase 1: offline backend video detection pipeline.
 - Explainable event scoring for prolonged dwell, low mobility speed, and high
   position variance.
 - Unit tests for feature extraction, event scoring, and SORT-style tracking.
+- Local FastAPI analysis submission and retrieval endpoints.
+- API summaries for frontend-friendly frame, track, and event counts.
+- Local Next.js development CORS support.
 
 ## Next
 
 - Run the full pipeline against a real local video after installing backend
   dependencies.
+- Inspect API output from a real local video before adding upload handling,
+  Redis, PostgreSQL, or a frontend.

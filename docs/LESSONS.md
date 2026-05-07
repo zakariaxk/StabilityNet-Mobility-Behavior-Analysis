@@ -10,3 +10,5 @@
   later detector and tracker integration easier to validate.
 - Vision dependencies should fail with explicit setup guidance. Minimal local
   environments may not have OpenCV or Ultralytics installed yet.
+- Early behavior events should explain the exact threshold signal they came
+  from. This keeps results debuggable before any learned anomaly model exists.

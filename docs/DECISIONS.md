@@ -27,3 +27,6 @@ later if identity switches become a measured problem.
 Phase 1 event scoring uses transparent thresholds for dwell time, speed, and
 position variance. Learned anomaly models are deferred until the project has
 real outputs and evaluation data.
+
+The pipeline emits the first occurrence of each event type per track to keep
+offline JSON output readable. Richer event lifecycle semantics are deferred.

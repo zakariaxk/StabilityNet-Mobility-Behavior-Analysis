@@ -35,3 +35,8 @@ logic.
 - `app.vision`: detector and tracker implementations.
 - `app.schemas`: stable data contracts between pipeline stages.
 - `app.utils`: small math and geometry helpers shared by pipeline stages.
+
+## Event Semantics
+
+Phase 1 events are heuristic indicators based on configured thresholds. They are
+not clinical diagnoses and should be reviewed as mobility-pattern signals.

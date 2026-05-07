@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.behavior.events import BehaviorEvent
 from app.behavior.features import BehaviorFeatures, extract_features
+from app.behavior.scoring import EventScorer
 from app.behavior.track_state import TrackStore
 from app.config import AnalysisRequest
 from app.pipeline.frame_reader import VideoFrameReader
@@ -29,21 +31,32 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
     detector = YOLOPersonDetector(request.config.detector)
     tracker = SortTracker(request.config.tracker)
     track_store = TrackStore()
+    scorer = EventScorer(request.config.behavior)
 
     frames_processed = 0
     frame_summaries: list[dict[str, object]] = []
     all_observations: list[TrackObservation] = []
     latest_features: dict[int, BehaviorFeatures] = {}
+    events: list[BehaviorEvent] = []
+    emitted_event_keys: set[tuple[int, str]] = set()
     for frame in reader.frames(max_frames=request.config.max_frames):
         detections = detector.detect(frame.image)
         observations = tracker.update(detections, frame.index, frame.timestamp_s)
         all_observations.extend(observations)
         frame_features: list[BehaviorFeatures] = []
+        frame_events: list[BehaviorEvent] = []
         for observation in observations:
             history = track_store.update(observation)
             features = extract_features(history, request.config.behavior)
             latest_features[features.track_id] = features
             frame_features.append(features)
+            for event in scorer.score(features, observation.timestamp_s):
+                event_key = (event.track_id, event.event_type)
+                if event_key in emitted_event_keys:
+                    continue
+                emitted_event_keys.add(event_key)
+                events.append(event)
+                frame_events.append(event)
         frame_summaries.append(
             {
                 "frame_index": frame.index,
@@ -51,18 +64,19 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
                 "detections": [detection.to_dict() for detection in detections],
                 "tracks": [observation.to_dict() for observation in observations],
                 "features": [features.to_dict() for features in frame_features],
+                "events": [event.to_dict() for event in frame_events],
             }
         )
         frames_processed += 1
 
     result: dict[str, object] = {
-        "analysis_version": "phase-1e",
+        "analysis_version": "phase-1f",
         "created_at": datetime.now(UTC).isoformat(),
         "video": metadata.to_dict(),
         "frames_processed": frames_processed,
         "frames": frame_summaries,
         "tracks": _summarize_tracks(all_observations, latest_features),
-        "events": [],
+        "events": [event.to_dict() for event in events],
     }
     write_json(request.output_path, result)
     return result

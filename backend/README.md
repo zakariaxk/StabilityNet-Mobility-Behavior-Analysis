@@ -14,7 +14,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -e ".[dev]"
 python3 -m app.cli --help
-pytest
+python3 -m unittest discover -s tests
 ```
 
 ## Phase 1 Target

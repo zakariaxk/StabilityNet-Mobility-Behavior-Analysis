@@ -1,10 +1,12 @@
 """Runtime configuration for the offline analysis pipeline."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 
 DEFAULT_DETECTOR_MODEL = "yolo26n.pt"
+DETECTOR_MODEL_ENV = "STABILITYNET_DETECTOR_MODEL"
 
 
 @dataclass(frozen=True)
@@ -47,3 +49,11 @@ class AnalysisRequest:
     config: PipelineConfig = PipelineConfig()
     annotated_video_path: Path | None = None
     annotated_video_url: str | None = None
+
+
+def pipeline_config_from_env() -> PipelineConfig:
+    return PipelineConfig(
+        detector=DetectorConfig(
+            model_name=os.getenv(DETECTOR_MODEL_ENV, DEFAULT_DETECTOR_MODEL),
+        ),
+    )

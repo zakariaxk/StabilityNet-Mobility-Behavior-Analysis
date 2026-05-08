@@ -15,7 +15,7 @@ from app.api.analysis_service import (
 )
 from app.api.schemas import AnalysisCreateRequest, AnalysisRecord
 from app.pipeline.frame_reader import VideoDependencyError, VideoOpenError
-from app.vision.detector import DetectorDependencyError
+from app.vision.detector import DetectorDependencyError, DetectorInferenceError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -45,12 +45,16 @@ def create_analysis(
     request: Request,
 ) -> dict[str, object]:
     service = _analysis_service(request)
+    logger.info("analysis sample request received")
     try:
-        return service.create(Path(payload.video_path))
+        return service.create(payload.video_path)
     except VideoOpenError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (DetectorDependencyError, VideoDependencyError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DetectorInferenceError as exc:
+        logger.exception("analysis inference failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post(
@@ -75,6 +79,9 @@ def upload_analysis(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (DetectorDependencyError, VideoDependencyError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DetectorInferenceError as exc:
+        logger.exception("upload analysis inference failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisRecord)

@@ -1,7 +1,10 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from app.config import DetectorConfig
+from app.vision.detector import DetectorDependencyError
 from app.vision import yolo_detector
 from app.vision.yolo_detector import YOLOPersonDetector
 
@@ -54,22 +57,26 @@ class _FakeYOLO:
 class YoloPersonDetectorTests(unittest.TestCase):
     def setUp(self) -> None:
         _FakeYOLO.instances = []
+        yolo_detector._MODEL_CACHE.clear()
 
     def test_loads_configured_model_and_converts_person_detections(self) -> None:
-        with patch.object(yolo_detector, "YOLO", _FakeYOLO):
-            detector = YOLOPersonDetector(
-                DetectorConfig(
-                    model_name="custom-yolo26.pt",
-                    confidence_threshold=0.42,
-                    person_class_id=0,
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "custom-yolo26.pt"
+            model_path.write_bytes(b"fake weights")
+            with patch.object(yolo_detector, "YOLO", _FakeYOLO):
+                detector = YOLOPersonDetector(
+                    DetectorConfig(
+                        model_name=str(model_path),
+                        confidence_threshold=0.42,
+                        person_class_id=0,
+                    )
                 )
-            )
 
-            detections = detector.detect(frame="fake-frame")
+                detections = detector.detect(frame="fake-frame")
 
         self.assertEqual(len(_FakeYOLO.instances), 1)
         model = _FakeYOLO.instances[0]
-        self.assertEqual(model.model_name, "custom-yolo26.pt")
+        self.assertEqual(model.model_name, str(model_path))
         self.assertEqual(
             model.predict_calls,
             [
@@ -88,6 +95,26 @@ class YoloPersonDetectorTests(unittest.TestCase):
         self.assertEqual(detection.label, "person")
         self.assertEqual(detection.confidence, 0.91)
         self.assertEqual(detection.bbox.to_xyxy(), [10.0, 20.0, 30.0, 60.0])
+
+    def test_missing_local_model_fails_clearly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_path = Path(tmpdir) / "missing.pt"
+
+            with self.assertRaisesRegex(
+                DetectorDependencyError,
+                "YOLO model weights not found",
+            ):
+                YOLOPersonDetector(DetectorConfig(model_name=str(missing_path)))
+
+    def test_reuses_loaded_model_for_same_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "custom-yolo26.pt"
+            model_path.write_bytes(b"fake weights")
+            with patch.object(yolo_detector, "YOLO", _FakeYOLO):
+                YOLOPersonDetector(DetectorConfig(model_name=str(model_path)))
+                YOLOPersonDetector(DetectorConfig(model_name=str(model_path)))
+
+        self.assertEqual(len(_FakeYOLO.instances), 1)
 
 
 if __name__ == "__main__":

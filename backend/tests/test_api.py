@@ -32,7 +32,14 @@ def fake_runner(request: AnalysisRequest) -> dict[str, object]:
 class ApiTests(unittest.TestCase):
     def test_creates_and_retrieves_analysis_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            sample_dir = Path(tmpdir) / "samples"
+            sample_dir.mkdir()
+            (sample_dir / "test-video.mp4").write_bytes(b"fake video bytes")
+            service = AnalysisService(
+                output_dir=Path(tmpdir) / "analyses",
+                sample_dir=sample_dir,
+                runner=fake_runner,
+            )
             client = TestClient(create_app(analysis_service=service))
 
             create_response = client.post(
@@ -52,7 +59,7 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(created["tracks"], [])
             self.assertEqual(created["events"][0]["event_type"], "Slow Walking")
             self.assertEqual(created["events"][0]["severity"], "medium")
-            self.assertEqual(created["video_path"], "samples/test-video.mp4")
+            self.assertTrue(created["video_path"].endswith("samples/test-video.mp4"))
             self.assertEqual(created["result"]["analysis_version"], "test")
             self.assertEqual(created["result"]["status"], "completed")
             self.assertEqual(created["result"]["events"][0]["event_type"], "Slow Walking")
@@ -68,6 +75,49 @@ class ApiTests(unittest.TestCase):
 
             self.assertEqual(get_response.status_code, 200)
             self.assertEqual(get_response.json()["analysis_id"], created["analysis_id"])
+
+    def test_rejects_missing_sample_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(
+                output_dir=Path(tmpdir) / "analyses",
+                sample_dir=Path(tmpdir) / "samples",
+                runner=fake_runner,
+            )
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post(
+                "/analyses",
+                json={"video_path": "samples/missing.mp4"},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["detail"], "Video file not found.")
+
+    def test_rejects_empty_sample_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post("/analyses", json={"video_path": ""})
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(
+                response.json()["detail"],
+                "Upload an MP4 file or select a sample video before running analysis.",
+            )
+
+    def test_rejects_unsafe_sample_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post(
+                "/analyses",
+                json={"video_path": "../secret.mp4"},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["detail"], "Video file not found.")
 
     def test_returns_404_for_missing_analysis(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -164,6 +214,23 @@ class ApiTests(unittest.TestCase):
                 response.headers["access-control-allow-origin"],
                 "http://localhost:3000",
             )
+
+    def test_wildcard_cors_disables_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service, cors_origins=["*"]))
+
+            response = client.options(
+                "/health",
+                headers={
+                    "Origin": "http://localhost:3000",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["access-control-allow-origin"], "*")
+            self.assertNotIn("access-control-allow-credentials", response.headers)
 
 
 if __name__ == "__main__":

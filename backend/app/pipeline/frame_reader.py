@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import math
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -18,6 +20,9 @@ class VideoOpenError(RuntimeError):
 
 class VideoDependencyError(RuntimeError):
     """Raised when video ingestion dependencies are unavailable."""
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -59,9 +64,13 @@ class VideoFrameReader:
         try:
             cv = _require_cv2()
             fps = self._read_fps(capture)
-            frame_count = int(capture.get(cv.CAP_PROP_FRAME_COUNT) or 0)
-            width = int(capture.get(cv.CAP_PROP_FRAME_WIDTH) or 0)
-            height = int(capture.get(cv.CAP_PROP_FRAME_HEIGHT) or 0)
+            frame_count = max(0, int(capture.get(cv.CAP_PROP_FRAME_COUNT) or 0))
+            width = max(0, int(capture.get(cv.CAP_PROP_FRAME_WIDTH) or 0))
+            height = max(0, int(capture.get(cv.CAP_PROP_FRAME_HEIGHT) or 0))
+            if width == 0 or height == 0:
+                raise VideoOpenError("Video metadata is unreadable.")
+            if frame_count == 0:
+                logger.warning("video frame count is unavailable", extra={"path": str(self.video_path)})
             duration_s = frame_count / fps if fps > 0 and frame_count > 0 else 0.0
             return VideoMetadata(
                 path=str(self.video_path),
@@ -95,20 +104,29 @@ class VideoFrameReader:
 
     def _open_capture(self) -> Any:
         if not self.video_path.exists():
-            raise VideoOpenError(f"video file does not exist: {self.video_path}")
+            raise VideoOpenError("Video file not found.")
 
         cv = _require_cv2()
         capture = cv.VideoCapture(str(self.video_path))
         if not capture.isOpened():
             capture.release()
-            raise VideoOpenError(f"could not open video file: {self.video_path}")
+            raise VideoOpenError("Could not open video file.")
 
+        logger.info("video opened", extra={"path": str(self.video_path)})
         return capture
 
     def _read_fps(self, capture: Any) -> float:
         cv = _require_cv2()
         fps = float(capture.get(cv.CAP_PROP_FPS) or 0.0)
-        return fps if fps > 0 else self.fallback_fps
+        if math.isfinite(fps) and fps > 0:
+            return fps
+        if math.isfinite(self.fallback_fps) and self.fallback_fps > 0:
+            logger.warning(
+                "video FPS is invalid; using fallback",
+                extra={"path": str(self.video_path), "fallback_fps": self.fallback_fps},
+            )
+            return self.fallback_fps
+        return 30.0
 
 
 def _require_cv2() -> Any:

@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import BinaryIO, Callable
 from uuid import UUID, uuid4
 
-from app.config import AnalysisRequest, PipelineConfig
+from app.config import AnalysisRequest, PipelineConfig, pipeline_config_from_env
+from app.pipeline.frame_reader import VideoOpenError
 from app.pipeline.result_writer import write_json
 from app.pipeline.video_pipeline import analyze_video
 
@@ -34,21 +35,24 @@ class AnalysisService:
         self,
         output_dir: Path | str = "outputs/analyses",
         upload_dir: Path | str = "outputs/uploads",
+        sample_dir: Path | str = "samples",
         config: PipelineConfig | None = None,
         runner: AnalysisRunner = analyze_video,
     ) -> None:
         self.output_dir = Path(output_dir)
         self.upload_dir = Path(upload_dir)
-        self.config = config or PipelineConfig()
+        self.sample_dir = Path(sample_dir)
+        self.config = config or pipeline_config_from_env()
         self._runner = runner
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.upload_dir.mkdir(parents=True, exist_ok=True)
 
-    def create(self, video_path: Path) -> dict[str, object]:
+    def create(self, video_path: Path | str | None) -> dict[str, object]:
         analysis_id = str(uuid4())
+        safe_video_path = self._resolve_sample_video_path(video_path)
         return self._run_analysis(
             analysis_id=analysis_id,
-            video_path=video_path,
+            video_path=safe_video_path,
             source="local_path",
         )
 
@@ -159,6 +163,35 @@ class AnalysisService:
     def _result_path(self, analysis_id: str) -> Path:
         safe_id = _safe_uuid(analysis_id)
         return self.output_dir / f"{safe_id}.result.json"
+
+    def _resolve_sample_video_path(self, video_path: Path | str | None) -> Path:
+        if video_path is None or not str(video_path).strip():
+            raise VideoOpenError(
+                "Upload an MP4 file or select a sample video before running analysis."
+            )
+
+        requested_path = Path(str(video_path).strip())
+        if requested_path.is_absolute() or ".." in requested_path.parts:
+            raise VideoOpenError("Video file not found.")
+        if requested_path.suffix.lower() != ".mp4":
+            raise VideoOpenError("Only MP4 video files are supported.")
+
+        relative_path = requested_path
+        if relative_path.parts and relative_path.parts[0] == self.sample_dir.name:
+            relative_path = Path(*relative_path.parts[1:])
+        if not relative_path.parts:
+            raise VideoOpenError("Video file not found.")
+
+        sample_root = self.sample_dir.resolve()
+        resolved_path = (sample_root / relative_path).resolve()
+        try:
+            resolved_path.relative_to(sample_root)
+        except ValueError as exc:
+            raise VideoOpenError("Video file not found.") from exc
+
+        if not resolved_path.exists() or not resolved_path.is_file():
+            raise VideoOpenError("Video file not found.")
+        return self.sample_dir / relative_path
 
 
 def _safe_uuid(value: str) -> str:

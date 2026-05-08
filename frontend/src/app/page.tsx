@@ -647,7 +647,7 @@ function AnnotatedVideo({
     >
       <div className="artifact-heading">
         <h2 id="video-title">4. Annotated Output</h2>
-        {hasResult ? <span>Primary output artifact</span> : null}
+        {hasResult ? <span>Primary Analysis View</span> : null}
       </div>
       <div className="video-frame">
         {videoUrl ? (

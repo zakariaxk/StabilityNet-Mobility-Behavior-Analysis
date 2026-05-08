@@ -1,4 +1,4 @@
-"""YOLOv8n person detector implementation."""
+"""Ultralytics YOLO person detector implementation."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised in minimal envs.
 
 
 class YOLOPersonDetector:
-    """Detect people in frames using Ultralytics YOLOv8."""
+    """Detect people in frames using Ultralytics YOLO."""
 
     def __init__(self, config: DetectorConfig) -> None:
         if YOLO is None:
@@ -85,4 +85,3 @@ def _tensor_list(value: Any) -> list[float]:
     if hasattr(value, "tolist"):
         return [float(item) for item in value.tolist()]
     return [float(item) for item in value]
-

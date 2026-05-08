@@ -67,6 +67,47 @@ class ApiTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 404)
 
+    def test_uploads_mp4_and_serves_video(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(
+                output_dir=Path(tmpdir) / "analyses",
+                upload_dir=Path(tmpdir) / "uploads",
+                runner=fake_runner,
+            )
+            client = TestClient(create_app(analysis_service=service))
+
+            create_response = client.post(
+                "/analyses/upload",
+                files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+            )
+
+            self.assertEqual(create_response.status_code, 201)
+            created = create_response.json()
+            self.assertEqual(created["source"], "uploaded_file")
+            self.assertEqual(created["original_filename"], "clip.mp4")
+            self.assertTrue(created["video_path"].endswith("/clip.mp4"))
+            self.assertEqual(
+                created["video_url"],
+                f"/analyses/{created['analysis_id']}/video",
+            )
+
+            video_response = client.get(f"/analyses/{created['analysis_id']}/video")
+
+            self.assertEqual(video_response.status_code, 200)
+            self.assertEqual(video_response.content, b"fake video bytes")
+
+    def test_rejects_non_mp4_uploads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post(
+                "/analyses/upload",
+                files={"file": ("clip.mov", b"fake video bytes", "video/quicktime")},
+            )
+
+            self.assertEqual(response.status_code, 400)
+
     def test_allows_local_nextjs_dev_origin(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)

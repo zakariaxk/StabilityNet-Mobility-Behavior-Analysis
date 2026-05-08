@@ -30,7 +30,8 @@ Override that when needed:
 STABILITYNET_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
-The first screen submits a local backend video path such as:
+The first screen supports direct `.mp4` upload and also keeps the backend-path
+debug workflow. A backend video path looks like:
 
 ```text
 samples/test-video.mp4

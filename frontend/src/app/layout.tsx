@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "StabilityNet Review",
-  description: "Local analysis review interface for StabilityNet."
+  title: "StabilityNet",
+  description: "Video-based mobility and fall-risk analysis."
 };
 
 export default function RootLayout({

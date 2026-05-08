@@ -26,8 +26,6 @@ class AnalysisRecord(BaseModel):
     tracks: list[dict[str, Any]] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
     message: str | None = None
-    video_path: str
-    result_path: str
     source: str = "local_path"
     original_filename: str | None = None
     video_url: str | None = None

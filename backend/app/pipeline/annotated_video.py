@@ -41,6 +41,7 @@ class AnnotatedVideoWriter:
         self._writer: Any | None = None
         self._temp_path: Path | None = None
         self._frames_written = 0
+        self._compatibility_path: str | None = None
 
     def __enter__(self) -> "AnnotatedVideoWriter":
         return self
@@ -104,7 +105,11 @@ class AnnotatedVideoWriter:
         self._finalize_output()
         logger.info(
             "annotated video written",
-            extra={"output_path": str(self.output_path), "frames": self._frames_written},
+            extra={
+                "output_path": str(self.output_path),
+                "frames": self._frames_written,
+                "compatibility_path": self._compatibility_path,
+            },
         )
 
     def abort(self) -> None:
@@ -149,6 +154,7 @@ class AnnotatedVideoWriter:
         ffmpeg = shutil.which("ffmpeg")
         if ffmpeg is None:
             self._temp_path.replace(self.output_path)
+            self._compatibility_path = "opencv-mp4v-fallback"
             logger.warning(
                 "ffmpeg not found; serving OpenCV mp4v output",
                 extra={"output_path": str(self.output_path)},
@@ -173,16 +179,42 @@ class AnnotatedVideoWriter:
             str(self.output_path),
         ]
         try:
-            subprocess.run(command, check=True, capture_output=True, timeout=300)
+            completed = subprocess.run(command, check=True, capture_output=True, timeout=300)
+        except subprocess.CalledProcessError as exc:
+            self._use_opencv_fallback(f"ffmpeg exited with {exc.returncode}", exc.stderr)
+            return
         except (subprocess.SubprocessError, OSError) as exc:
-            self._temp_path.replace(self.output_path)
-            logger.warning(
-                "ffmpeg transcode failed; serving OpenCV mp4v output",
-                extra={"output_path": str(self.output_path), "error": str(exc)},
-            )
+            self._use_opencv_fallback(str(exc), None)
             return
 
+        if not self.output_path.exists() or self.output_path.stat().st_size == 0:
+            self._use_opencv_fallback("ffmpeg produced no output", completed.stderr)
+            return
+
+        self._compatibility_path = "ffmpeg-h264-yuv420p"
+        logger.info(
+            "ffmpeg transcode produced browser-compatible annotated video",
+            extra={"output_path": str(self.output_path)},
+        )
         self._temp_path.unlink(missing_ok=True)
+
+    def _use_opencv_fallback(self, error: str, stderr: bytes | None) -> None:
+        if self.output_path is None or self._temp_path is None:
+            return
+
+        self._temp_path.replace(self.output_path)
+        self._compatibility_path = "opencv-mp4v-fallback"
+        stderr_text = ""
+        if stderr:
+            stderr_text = stderr.decode("utf-8", errors="replace").strip()
+        logger.warning(
+            "ffmpeg transcode failed; serving OpenCV mp4v output",
+            extra={
+                "output_path": str(self.output_path),
+                "error": error,
+                "stderr": stderr_text,
+            },
+        )
 
 
 def _draw_box(frame: Any, bbox: BoundingBox, color: tuple[int, int, int], label: str) -> None:

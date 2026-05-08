@@ -129,8 +129,10 @@ class AnalysisService:
         )
         result = self._runner(request)
         result = _normalize_result(result)
+        public_result = _public_result(result)
         if annotated_video_path.exists():
             result["annotated_video_url"] = annotated_video_url
+            public_result["annotated_video_url"] = annotated_video_url
 
         record: dict[str, object] = {
             "analysis_id": analysis_id,
@@ -148,7 +150,7 @@ class AnalysisService:
             "result_path": str(result_path),
             "source": source,
             "summary": _summarize_result(result),
-            "result": result,
+            "result": public_result,
         }
         if original_filename is not None:
             record["original_filename"] = original_filename
@@ -311,6 +313,16 @@ def _normalize_result(result: dict[str, object]) -> dict[str, object]:
     payload["tracks"] = tracks
     payload["events"] = events
     payload["message"] = _string_value(payload.get("message"))
+    return payload
+
+
+def _public_result(result: dict[str, object]) -> dict[str, object]:
+    payload = dict(result)
+    video = payload.get("video")
+    if isinstance(video, dict):
+        public_video = dict(video)
+        public_video.pop("path", None)
+        payload["video"] = public_video
     return payload
 
 

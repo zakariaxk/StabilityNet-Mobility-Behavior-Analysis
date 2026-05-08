@@ -76,7 +76,9 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(created["tracks"], [])
             self.assertEqual(created["events"][0]["event_type"], "Slow Walking")
             self.assertEqual(created["events"][0]["severity"], "medium")
-            self.assertTrue(created["video_path"].endswith("samples/test-video.mp4"))
+            self.assertNotIn("video_path", created)
+            self.assertNotIn("result_path", created)
+            self.assertNotIn("path", created["result"]["video"])
             self.assertEqual(created["result"]["analysis_version"], "test")
             self.assertEqual(created["result"]["status"], "completed")
             self.assertEqual(created["result"]["events"][0]["event_type"], "Slow Walking")
@@ -163,7 +165,8 @@ class ApiTests(unittest.TestCase):
             created = create_response.json()
             self.assertEqual(created["source"], "uploaded_file")
             self.assertEqual(created["original_filename"], "clip.mp4")
-            self.assertTrue(created["video_path"].endswith("/clip.mp4"))
+            self.assertNotIn("video_path", created)
+            self.assertNotIn("result_path", created)
             self.assertEqual(
                 created["video_url"],
                 f"/analyses/{created['analysis_id']}/video",

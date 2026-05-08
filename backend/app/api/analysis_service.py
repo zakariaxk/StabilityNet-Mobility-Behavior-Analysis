@@ -35,17 +35,20 @@ class AnalysisService:
         self,
         output_dir: Path | str = "outputs/analyses",
         upload_dir: Path | str = "outputs/uploads",
+        video_output_dir: Path | str = "outputs/videos",
         sample_dir: Path | str = "samples",
         config: PipelineConfig | None = None,
         runner: AnalysisRunner = analyze_video,
     ) -> None:
         self.output_dir = Path(output_dir)
         self.upload_dir = Path(upload_dir)
+        self.video_output_dir = Path(video_output_dir)
         self.sample_dir = Path(sample_dir)
         self.config = config or pipeline_config_from_env()
         self._runner = runner
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.upload_dir.mkdir(parents=True, exist_ok=True)
+        self.video_output_dir.mkdir(parents=True, exist_ok=True)
 
     def create(self, video_path: Path | str | None) -> dict[str, object]:
         analysis_id = str(uuid4())
@@ -91,6 +94,12 @@ class AnalysisService:
     def get_video_path(self, analysis_id: str) -> Path:
         record = self.get(analysis_id)
         video_path = record.get("uploaded_video_path")
+        annotated_video_path = record.get("annotated_video_path")
+        if isinstance(annotated_video_path, str):
+            path = Path(annotated_video_path)
+            if path.exists():
+                return path
+
         if not isinstance(video_path, str):
             raise AnalysisNotFoundError(f"analysis video not found: {analysis_id}")
 
@@ -109,13 +118,19 @@ class AnalysisService:
         uploaded_video_path: str | None = None,
     ) -> dict[str, object]:
         result_path = self._result_path(analysis_id)
+        annotated_video_path = self._annotated_video_path(analysis_id)
+        annotated_video_url = self._annotated_video_url(annotated_video_path)
         request = AnalysisRequest(
             video_path=video_path,
             output_path=result_path,
             config=self.config,
+            annotated_video_path=annotated_video_path,
+            annotated_video_url=annotated_video_url,
         )
         result = self._runner(request)
         result = _normalize_result(result)
+        if annotated_video_path.exists():
+            result["annotated_video_url"] = annotated_video_url
 
         record: dict[str, object] = {
             "analysis_id": analysis_id,
@@ -139,10 +154,22 @@ class AnalysisService:
             record["original_filename"] = original_filename
         if video_url is not None:
             record["video_url"] = video_url
+        elif result["annotated_video_url"] is not None:
+            record["video_url"] = f"/analyses/{analysis_id}/video"
+        if result["annotated_video_url"] is not None:
+            record["annotated_video_path"] = str(annotated_video_path)
         if uploaded_video_path is not None:
             record["uploaded_video_path"] = uploaded_video_path
 
         write_json(self._record_path(analysis_id), record)
+        logger.info(
+            "analysis record written",
+            extra={
+                "analysis_id": analysis_id,
+                "result_path": str(result_path),
+                "annotated_video_url": result["annotated_video_url"],
+            },
+        )
         return record
 
     def get(self, analysis_id: str) -> dict[str, object]:
@@ -163,6 +190,13 @@ class AnalysisService:
     def _result_path(self, analysis_id: str) -> Path:
         safe_id = _safe_uuid(analysis_id)
         return self.output_dir / f"{safe_id}.result.json"
+
+    def _annotated_video_path(self, analysis_id: str) -> Path:
+        safe_id = _safe_uuid(analysis_id)
+        return self.video_output_dir / f"{safe_id}.mp4"
+
+    def _annotated_video_url(self, video_path: Path) -> str:
+        return f"/outputs/{video_path.name}"
 
     def _resolve_sample_video_path(self, video_path: Path | str | None) -> Path:
         if video_path is None or not str(video_path).strip():

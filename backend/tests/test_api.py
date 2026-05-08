@@ -31,6 +31,13 @@ def fake_runner(request: AnalysisRequest) -> dict[str, object]:
     return result
 
 
+def fake_runner_with_annotated_video(request: AnalysisRequest) -> dict[str, object]:
+    if request.annotated_video_path is not None:
+        request.annotated_video_path.parent.mkdir(parents=True, exist_ok=True)
+        request.annotated_video_path.write_bytes(b"annotated video bytes")
+    return fake_runner(request)
+
+
 def pipeline_error_runner(request: AnalysisRequest) -> dict[str, object]:
     raise AnalysisPipelineError("Analysis failed while processing frame 3.")
 
@@ -166,6 +173,35 @@ class ApiTests(unittest.TestCase):
 
             self.assertEqual(video_response.status_code, 200)
             self.assertEqual(video_response.content, b"fake video bytes")
+
+    def test_serves_annotated_video_from_outputs_route(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(
+                output_dir=Path(tmpdir) / "analyses",
+                upload_dir=Path(tmpdir) / "uploads",
+                video_output_dir=Path(tmpdir) / "videos",
+                runner=fake_runner_with_annotated_video,
+            )
+            client = TestClient(create_app(analysis_service=service))
+
+            create_response = client.post(
+                "/analyses/upload",
+                files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+            )
+
+            self.assertEqual(create_response.status_code, 201)
+            created = create_response.json()
+            annotated_video_url = created["annotated_video_url"]
+            self.assertTrue(annotated_video_url.startswith("/outputs/"))
+            self.assertEqual(created["result"]["annotated_video_url"], annotated_video_url)
+
+            output_response = client.get(annotated_video_url)
+            compatibility_response = client.get(f"/analyses/{created['analysis_id']}/video")
+
+            self.assertEqual(output_response.status_code, 200)
+            self.assertEqual(output_response.content, b"annotated video bytes")
+            self.assertEqual(compatibility_response.status_code, 200)
+            self.assertEqual(compatibility_response.content, b"annotated video bytes")
 
     def test_rejects_non_mp4_uploads(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -4,6 +4,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.analysis_service import AnalysisService
 from app.api.routes import router
@@ -31,6 +32,7 @@ def create_app(
     cors_origins: list[str] | None = None,
 ) -> FastAPI:
     origins = cors_origins or _cors_origins_from_env()
+    service = analysis_service or AnalysisService()
     app = FastAPI(title="StabilityNet API")
     app.add_middleware(
         CORSMiddleware,
@@ -39,8 +41,13 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.state.analysis_service = analysis_service or AnalysisService()
+    app.state.analysis_service = service
     app.include_router(router)
+    app.mount(
+        "/outputs",
+        StaticFiles(directory=str(service.video_output_dir)),
+        name="outputs",
+    )
     return app
 
 

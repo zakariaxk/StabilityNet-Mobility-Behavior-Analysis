@@ -14,6 +14,7 @@ from app.api.analysis_service import (
     InvalidUploadError,
 )
 from app.api.schemas import AnalysisCreateRequest, AnalysisRecord
+from app.pipeline.annotated_video import VideoWriteError
 from app.pipeline.frame_reader import VideoDependencyError, VideoOpenError
 from app.pipeline.video_pipeline import AnalysisPipelineError
 from app.vision.detector import DetectorDependencyError, DetectorInferenceError
@@ -59,6 +60,9 @@ def create_analysis(
     except AnalysisPipelineError as exc:
         logger.exception("analysis pipeline failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except VideoWriteError as exc:
+        logger.exception("analysis video output failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post(
@@ -88,6 +92,9 @@ def upload_analysis(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except AnalysisPipelineError as exc:
         logger.exception("upload analysis pipeline failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except VideoWriteError as exc:
+        logger.exception("upload analysis video output failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

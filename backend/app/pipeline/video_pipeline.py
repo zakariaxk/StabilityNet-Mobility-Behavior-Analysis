@@ -11,6 +11,7 @@ from app.behavior.features import BehaviorFeatures, extract_features
 from app.behavior.scoring import EventScorer
 from app.behavior.track_state import TrackStore
 from app.config import AnalysisRequest
+from app.pipeline.annotated_video import AnnotatedVideoWriter
 from app.pipeline.frame_reader import VideoFrameReader, VideoOpenError
 from app.pipeline.result_writer import write_json
 from app.schemas.tracking import TrackObservation
@@ -50,42 +51,49 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
     latest_features: dict[int, BehaviorFeatures] = {}
     events: list[BehaviorEvent] = []
     emitted_event_keys: set[tuple[int, str]] = set()
-    for frame in reader.frames(max_frames=request.config.max_frames):
-        try:
-            detections = detector.detect(frame.image)
-            observations = tracker.update(detections, frame.index, frame.timestamp_s)
-        except DetectorInferenceError:
-            raise
-        except Exception as exc:
-            raise AnalysisPipelineError(
-                f"Analysis failed while processing frame {frame.index}."
-            ) from exc
-        all_observations.extend(observations)
-        frame_features: list[BehaviorFeatures] = []
-        frame_events: list[BehaviorEvent] = []
-        for observation in observations:
-            history = track_store.update(observation)
-            features = extract_features(history, request.config.behavior)
-            latest_features[features.track_id] = features
-            frame_features.append(features)
-            for event in scorer.score(features, observation.timestamp_s):
-                event_key = (event.track_id, event.event_type)
-                if event_key in emitted_event_keys:
-                    continue
-                emitted_event_keys.add(event_key)
-                events.append(event)
-                frame_events.append(event)
-        frame_summaries.append(
-            {
-                "frame_index": frame.index,
-                "timestamp_s": frame.timestamp_s,
-                "detections": [detection.to_dict() for detection in detections],
-                "tracks": [observation.to_dict() for observation in observations],
-                "features": [features.to_dict() for features in frame_features],
-                "events": [event.to_dict() for event in frame_events],
-            }
-        )
-        frames_processed += 1
+    with AnnotatedVideoWriter(
+        request.annotated_video_path,
+        fps=metadata.fps,
+        fallback_fps=request.config.fallback_fps,
+    ) as annotated_writer:
+        for frame in reader.frames(max_frames=request.config.max_frames):
+            try:
+                detections = detector.detect(frame.image)
+                observations = tracker.update(detections, frame.index, frame.timestamp_s)
+            except DetectorInferenceError:
+                raise
+            except Exception as exc:
+                raise AnalysisPipelineError(
+                    f"Analysis failed while processing frame {frame.index}."
+                ) from exc
+            all_observations.extend(observations)
+            frame_features: list[BehaviorFeatures] = []
+            frame_events: list[BehaviorEvent] = []
+            for observation in observations:
+                history = track_store.update(observation)
+                features = extract_features(history, request.config.behavior)
+                latest_features[features.track_id] = features
+                frame_features.append(features)
+                for event in scorer.score(features, observation.timestamp_s):
+                    event_key = (event.track_id, event.event_type)
+                    if event_key in emitted_event_keys:
+                        continue
+                    emitted_event_keys.add(event_key)
+                    events.append(event)
+                    frame_events.append(event)
+
+            annotated_writer.write(frame.image, detections, observations, frame_events)
+            frame_summaries.append(
+                {
+                    "frame_index": frame.index,
+                    "timestamp_s": frame.timestamp_s,
+                    "detections": [detection.to_dict() for detection in detections],
+                    "tracks": [observation.to_dict() for observation in observations],
+                    "features": [features.to_dict() for features in frame_features],
+                    "events": [event.to_dict() for event in frame_events],
+                }
+            )
+            frames_processed += 1
 
     if frames_processed == 0:
         raise VideoOpenError("Video file contains no readable frames.")
@@ -96,6 +104,11 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
     processing_fps = (
         frames_processed / processing_seconds
         if frames_processed > 0 and processing_seconds > 0
+        else None
+    )
+    annotated_video_url = (
+        request.annotated_video_url
+        if request.annotated_video_path is not None and request.annotated_video_path.exists()
         else None
     )
 
@@ -109,7 +122,7 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         "events_count": len(event_payloads),
         "fps": metadata.fps,
         "processing_fps": processing_fps,
-        "annotated_video_url": request.annotated_video_url,
+        "annotated_video_url": annotated_video_url,
         "message": None,
         "frames": frame_summaries,
         "tracks": tracks,

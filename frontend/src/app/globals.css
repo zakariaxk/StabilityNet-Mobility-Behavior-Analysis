@@ -1275,13 +1275,16 @@ tbody tr:hover {
 
 .pipeline-panel {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  border-color: var(--border);
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
 }
 
 .pipeline-steps {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 18px;
+  gap: 16px;
 }
 
 .pipeline-item {
@@ -1297,40 +1300,42 @@ tbody tr:hover {
 
 .pipeline-step {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 38px minmax(0, 1fr);
   gap: 4px 12px;
   align-items: center;
-  min-height: 64px;
+  min-height: 76px;
   border: 1px solid var(--border);
-  border-radius: 9px;
-  background: #fbfdfc;
-  padding: 12px 14px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, var(--soft-blue) 100%);
+  padding: 14px;
 }
 
 .pipeline-step span {
   grid-row: 1 / 3;
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   place-items: center;
+  border-radius: 999px;
+  background: var(--soft-cyan);
   color: var(--primary);
 }
 
 .pipeline-step svg {
-  width: 28px;
-  height: 28px;
+  width: 21px;
+  height: 21px;
 }
 
 .pipeline-step strong {
   overflow-wrap: anywhere;
-  color: var(--primary);
+  color: var(--text);
   font-size: 13px;
   font-weight: 800;
   line-height: 1.2;
 }
 
 .pipeline-step small {
-  color: #53635f;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.25;
 }
@@ -1338,15 +1343,15 @@ tbody tr:hover {
 .pipeline-arrow {
   width: 20px;
   height: 20px;
-  color: var(--muted);
+  color: var(--muted-light);
 }
 
 .technical-metadata {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
   color: var(--muted-light);
   font-size: 12px;
   font-weight: 650;
@@ -1369,7 +1374,7 @@ tbody tr:hover {
   }
 
   .pipeline-steps {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .processing-panel ol {
@@ -1392,12 +1397,18 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 
+  .results-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .video-frame,
   .annotated-panel--result .video-frame {
     min-height: clamp(320px, 52vw, 560px);
   }
 
-  .results-side .table-wrap {
+  .results-side .table-wrap,
+  .results-side .subject-list,
+  .results-side .event-list {
     max-height: none;
   }
 
@@ -1411,6 +1422,12 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 
+  .app-shell::before {
+    top: -240px;
+    left: -120px;
+    width: 620px;
+  }
+
   .sidebar {
     position: relative;
     z-index: 1;
@@ -1419,6 +1436,7 @@ tbody tr:hover {
     min-height: 0;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.86);
     padding: 20px;
   }
 
@@ -1453,8 +1471,16 @@ tbody tr:hover {
     padding: 24px;
   }
 
+  .main-content::before {
+    top: 360px;
+    right: -260px;
+    width: 560px;
+    height: 660px;
+  }
+
   .hero-header {
     grid-template-columns: 1fr;
+    padding-top: 4px;
   }
 
   .online-pill {
@@ -1463,6 +1489,10 @@ tbody tr:hover {
 
   .sample-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pipeline-steps {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1480,7 +1510,7 @@ tbody tr:hover {
   }
 
   .hero-copy h1 {
-    font-size: 38px;
+    font-size: 40px;
   }
 
   .hero-subtitle {
@@ -1496,7 +1526,8 @@ tbody tr:hover {
   }
 
   .sample-grid,
-  .metric-grid {
+  .metric-grid,
+  .results-side {
     grid-template-columns: 1fr;
   }
 
@@ -1517,14 +1548,27 @@ tbody tr:hover {
     height: 38px;
   }
 
+  .artifact-heading,
+  .table-heading {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .artifact-heading {
+    display: grid;
+  }
+
   .video-frame,
   .annotated-panel--result .video-frame {
-    min-height: 240px;
+    min-height: 260px;
   }
 
   .table-heading {
-    grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .subject-stats {
+    grid-template-columns: 1fr;
   }
 
   th,

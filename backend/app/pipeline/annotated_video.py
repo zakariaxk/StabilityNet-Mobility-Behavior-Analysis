@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -31,7 +32,12 @@ class AnnotatedVideoWriter:
         fallback_fps: float,
     ) -> None:
         self.output_path = output_path
-        self.fps = fps if fps > 0 else fallback_fps
+        if math.isfinite(fps) and fps > 0:
+            self.fps = fps
+        elif math.isfinite(fallback_fps) and fallback_fps > 0:
+            self.fps = fallback_fps
+        else:
+            self.fps = 30.0
         self._writer: Any | None = None
         self._temp_path: Path | None = None
         self._frames_written = 0

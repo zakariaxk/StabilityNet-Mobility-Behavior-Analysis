@@ -64,9 +64,9 @@ class VideoFrameReader:
         try:
             cv = _require_cv2()
             fps = self._read_fps(capture)
-            frame_count = max(0, int(capture.get(cv.CAP_PROP_FRAME_COUNT) or 0))
-            width = max(0, int(capture.get(cv.CAP_PROP_FRAME_WIDTH) or 0))
-            height = max(0, int(capture.get(cv.CAP_PROP_FRAME_HEIGHT) or 0))
+            frame_count = _read_positive_int(capture.get(cv.CAP_PROP_FRAME_COUNT))
+            width = _read_positive_int(capture.get(cv.CAP_PROP_FRAME_WIDTH))
+            height = _read_positive_int(capture.get(cv.CAP_PROP_FRAME_HEIGHT))
             if width == 0 or height == 0:
                 raise VideoOpenError("Video metadata is unreadable.")
             if frame_count == 0:
@@ -136,3 +136,13 @@ def _require_cv2() -> Any:
             'with: python3 -m pip install -e ".[dev]"'
         )
     return cv2
+
+
+def _read_positive_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if math.isfinite(number) and number > 0:
+            return int(number)
+    return 0

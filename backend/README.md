@@ -76,5 +76,18 @@ Upload an MP4 directly:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/analyses/upload \
-  -F "file=@samples/test-video.mp4;type=video/mp4"
+  -F "file=@/absolute/path/to/local-video.mp4;type=video/mp4"
+```
+
+Or use the local helper from the `backend` folder:
+
+```bash
+python test_video_upload.py /absolute/path/to/local-video.mp4
+```
+
+Both upload paths return JSON with an `annotated_video_url` when annotated
+output was written. Open it by prefixing the backend host, for example:
+
+```text
+http://127.0.0.1:8000/outputs/<file>.mp4
 ```

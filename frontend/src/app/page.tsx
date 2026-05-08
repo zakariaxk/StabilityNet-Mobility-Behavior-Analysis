@@ -143,6 +143,10 @@ export default function StabilityNetPage() {
     readNumber(analysis?.summary, "processing_fps") ??
       readNumber(analysis?.result, "processing_fps")
   );
+  const optionalMetrics = useMemo(
+    () => buildOptionalMetrics(analysis),
+    [analysis]
+  );
 
   async function handleAnalyze() {
     if (!videoFile && !selectedSample) {
@@ -259,6 +263,7 @@ export default function StabilityNetPage() {
             framesProcessed={framesProcessed}
             trackCount={trackRows.length}
             eventCount={events.length}
+            optionalMetrics={optionalMetrics}
             processingFps={processingFps}
           />
 
@@ -490,12 +495,14 @@ function SummaryCards({
   framesProcessed,
   trackCount,
   eventCount,
+  optionalMetrics,
   processingFps
 }: {
   status: string;
   framesProcessed: number;
   trackCount: number;
   eventCount: number;
+  optionalMetrics: MetricItem[];
   processingFps: string;
 }) {
   return (
@@ -510,14 +517,22 @@ function SummaryCards({
         />
         <MetricCard
           icon={<UserIcon />}
-          label="Active Tracks"
+          label="Tracked Subjects"
           value={trackCount.toLocaleString()}
         />
         <MetricCard
           icon={<FlagIcon />}
-          label="Events Detected"
+          label="Mobility Events"
           value={eventCount.toLocaleString()}
         />
+        {optionalMetrics.map((metric) => (
+          <MetricCard
+            key={metric.label}
+            icon={metric.icon}
+            label={metric.label}
+            value={metric.value}
+          />
+        ))}
         <MetricCard icon={<GaugeIcon />} label="Processing FPS" value={processingFps} />
       </div>
     </section>
@@ -584,8 +599,8 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
   return (
     <section className="panel table-panel" aria-labelledby="tracks-title">
       <div className="table-heading">
-        <h2 id="tracks-title">5. Tracks</h2>
-        <span>Total Tracks: {tracks.length.toLocaleString()}</span>
+        <h2 id="tracks-title">5. Tracked Subjects</h2>
+        <span>Total Subjects: {tracks.length.toLocaleString()}</span>
       </div>
       {tracks.length > 0 ? (
         <div className="table-wrap">
@@ -620,8 +635,8 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
         </div>
       ) : (
         <EmptyState
-          title="No tracks available"
-          body="Run an analysis to see tracks."
+          title="No tracked subjects available"
+          body="Run an analysis to see tracked subjects."
         />
       )}
     </section>
@@ -719,6 +734,80 @@ function EmptyState({ title, body }: { title: string; body: string }) {
       <span>{body}</span>
     </div>
   );
+}
+
+type MetricItem = {
+  icon: ReactNode;
+  label: string;
+  value: string;
+};
+
+function buildOptionalMetrics(analysis: AnalysisRecord | null): MetricItem[] {
+  if (!analysis) {
+    return [];
+  }
+
+  const metrics = [
+    {
+      icon: <ActivityIcon />,
+      label: "Tracking Confidence",
+      value: readAnalysisMetric(analysis, [
+        "tracking_confidence",
+        "average_tracking_confidence",
+        "avg_tracking_confidence"
+      ])
+    },
+    {
+      icon: <ShieldIcon />,
+      label: "Mobility Stability",
+      value: readAnalysisMetric(analysis, [
+        "mobility_stability",
+        "path_stability",
+        "stability_score"
+      ])
+    },
+    {
+      icon: <ChartIcon />,
+      label: "Gait Variability",
+      value: readAnalysisMetric(analysis, [
+        "gait_variability",
+        "gait_variability_score",
+        "stride_variability"
+      ])
+    }
+  ];
+
+  return metrics
+    .filter((metric) => metric.value !== undefined)
+    .map((metric) => ({
+      icon: metric.icon,
+      label: metric.label,
+      value: formatOptionalDecimal(metric.value)
+    }));
+}
+
+function readAnalysisMetric(
+  analysis: AnalysisRecord,
+  keys: string[]
+): number | undefined {
+  const sources = [
+    analysis.summary,
+    analysis.result,
+    readRecord(analysis.summary, "metrics"),
+    readRecord(analysis.result, "metrics"),
+    readRecord(analysis.result, "summary")
+  ];
+
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = readNumber(source, key);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function PipelineSection() {

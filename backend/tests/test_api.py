@@ -118,6 +118,33 @@ class ApiTests(unittest.TestCase):
             )
 
             self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["detail"], "Only MP4 video uploads are supported.")
+
+    def test_rejects_missing_upload_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post("/analyses/upload", files={})
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(
+                response.json()["detail"],
+                "Upload an MP4 file or select a sample video before running analysis.",
+            )
+
+    def test_rejects_empty_mp4_uploads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=fake_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post(
+                "/analyses/upload",
+                files={"file": ("clip.mp4", b"", "video/mp4")},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["detail"], "Uploaded MP4 file is empty.")
 
     def test_allows_local_nextjs_dev_origin(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

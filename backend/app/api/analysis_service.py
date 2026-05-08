@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import shutil
@@ -15,6 +16,7 @@ from app.pipeline.result_writer import write_json
 from app.pipeline.video_pipeline import analyze_video
 
 AnalysisRunner = Callable[[AnalysisRequest], dict[str, object]]
+logger = logging.getLogger(__name__)
 
 
 class AnalysisNotFoundError(RuntimeError):
@@ -39,6 +41,8 @@ class AnalysisService:
         self.upload_dir = Path(upload_dir)
         self.config = config or PipelineConfig()
         self._runner = runner
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.upload_dir.mkdir(parents=True, exist_ok=True)
 
     def create(self, video_path: Path) -> dict[str, object]:
         analysis_id = str(uuid4())
@@ -59,6 +63,17 @@ class AnalysisService:
         upload_path.parent.mkdir(parents=True, exist_ok=True)
         with upload_path.open("wb") as output_file:
             shutil.copyfileobj(content, output_file)
+        if upload_path.stat().st_size == 0:
+            upload_path.unlink(missing_ok=True)
+            raise InvalidUploadError("Uploaded MP4 file is empty.")
+        logger.info(
+            "upload saved",
+            extra={
+                "analysis_id": analysis_id,
+                "upload_path": str(upload_path),
+                "bytes": upload_path.stat().st_size,
+            },
+        )
 
         return self._run_analysis(
             analysis_id=analysis_id,

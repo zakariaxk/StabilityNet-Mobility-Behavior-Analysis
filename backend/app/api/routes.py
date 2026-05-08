@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
@@ -17,6 +18,16 @@ from app.pipeline.frame_reader import VideoDependencyError, VideoOpenError
 from app.vision.detector import DetectorDependencyError
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+MP4_CONTENT_TYPES = {
+    "",
+    "application/mp4",
+    "application/octet-stream",
+    "video/mp4",
+    "video/x-m4v",
+}
+NO_VIDEO_MESSAGE = "Upload an MP4 file or select a sample video before running analysis."
 
 
 @router.get("/health")
@@ -49,10 +60,13 @@ def create_analysis(
 )
 def upload_analysis(
     request: Request,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
 ) -> dict[str, object]:
     service = _analysis_service(request)
-    if file.content_type not in {"video/mp4", "application/mp4", "video/x-m4v"}:
+    logger.info("analysis upload request received")
+    if file is None:
+        raise HTTPException(status_code=400, detail=NO_VIDEO_MESSAGE)
+    if not _is_mp4_upload(file):
         raise HTTPException(status_code=400, detail="Only MP4 video uploads are supported.")
 
     try:
@@ -85,3 +99,10 @@ def get_analysis_video(analysis_id: str, request: Request) -> FileResponse:
 
 def _analysis_service(request: Request) -> AnalysisService:
     return request.app.state.analysis_service
+
+
+def _is_mp4_upload(file: UploadFile) -> bool:
+    filename = file.filename or ""
+    if Path(filename).suffix.lower() != ".mp4":
+        return False
+    return (file.content_type or "") in MP4_CONTENT_TYPES

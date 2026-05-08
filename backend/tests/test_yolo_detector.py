@@ -6,7 +6,7 @@ from unittest.mock import patch
 from app.config import DetectorConfig
 from app.vision.detector import DetectorDependencyError
 from app.vision import yolo_detector
-from app.vision.yolo_detector import YOLOPersonDetector
+from app.vision.yolo_detector import YOLOPersonDetector, verify_yolo_detector
 
 
 class _FakeBox:
@@ -34,6 +34,7 @@ class _FakeYOLO:
         frame: object,
         conf: float,
         classes: list[int],
+        device: str,
         verbose: bool,
     ) -> list[_FakeResult]:
         self.predict_calls.append(
@@ -41,6 +42,7 @@ class _FakeYOLO:
                 "frame": frame,
                 "conf": conf,
                 "classes": classes,
+                "device": device,
                 "verbose": verbose,
             }
         )
@@ -69,10 +71,11 @@ class YoloPersonDetectorTests(unittest.TestCase):
                         model_name=str(model_path),
                         confidence_threshold=0.42,
                         person_class_id=0,
+                        device="cpu",
                     )
                 )
 
-                detections = detector.detect(frame="fake-frame")
+                detections = detector.predict(frame="fake-frame")
 
         self.assertEqual(len(_FakeYOLO.instances), 1)
         model = _FakeYOLO.instances[0]
@@ -84,6 +87,7 @@ class YoloPersonDetectorTests(unittest.TestCase):
                     "frame": "fake-frame",
                     "conf": 0.42,
                     "classes": [0],
+                    "device": "cpu",
                     "verbose": False,
                 }
             ],
@@ -106,6 +110,25 @@ class YoloPersonDetectorTests(unittest.TestCase):
             ):
                 YOLOPersonDetector(DetectorConfig(model_name=str(missing_path)))
 
+    def test_missing_yolo26n_downloads_to_configured_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "yolo26n.pt"
+
+            def fake_download(path: Path) -> str:
+                path.write_bytes(b"fake weights")
+                return str(path)
+
+            with patch.object(
+                yolo_detector,
+                "_download_official_yolo26n",
+                side_effect=fake_download,
+            ), patch.object(yolo_detector, "YOLO", _FakeYOLO):
+                detector = YOLOPersonDetector(DetectorConfig(model_name=str(model_path)))
+
+        self.assertEqual(detector.model_reference, str(model_path))
+        self.assertEqual(len(_FakeYOLO.instances), 1)
+        self.assertEqual(_FakeYOLO.instances[0].model_name, str(model_path))
+
     def test_reuses_loaded_model_for_same_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             model_path = Path(tmpdir) / "custom-yolo26.pt"
@@ -115,6 +138,34 @@ class YoloPersonDetectorTests(unittest.TestCase):
                 YOLOPersonDetector(DetectorConfig(model_name=str(model_path)))
 
         self.assertEqual(len(_FakeYOLO.instances), 1)
+
+    def test_verify_detector_runs_tiny_inference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "custom-yolo26.pt"
+            model_path.write_bytes(b"fake weights")
+            with patch.object(yolo_detector, "YOLO", _FakeYOLO):
+                verification = verify_yolo_detector(
+                    DetectorConfig(model_name=str(model_path)),
+                    run_inference=True,
+                )
+
+        self.assertEqual(verification.model_path, str(model_path))
+        self.assertEqual(verification.device, "CPU")
+        self.assertTrue(verification.inference_ran)
+        self.assertEqual(verification.detections_count, 1)
+
+    def test_rejects_unavailable_cuda_device(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / "custom-yolo26.pt"
+            model_path.write_bytes(b"fake weights")
+            with patch.object(yolo_detector, "_cuda_available", return_value=False):
+                with self.assertRaisesRegex(
+                    DetectorDependencyError,
+                    "CUDA is not available",
+                ):
+                    YOLOPersonDetector(
+                        DetectorConfig(model_name=str(model_path), device="cuda")
+                    )
 
 
 if __name__ == "__main__":

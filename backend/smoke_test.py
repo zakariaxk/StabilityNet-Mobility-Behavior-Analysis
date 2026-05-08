@@ -1,12 +1,12 @@
 """Backend smoke checks for StabilityNet.
 
-This script avoids running YOLO inference. It verifies that the FastAPI app can
-import, health checks work, output directories are creatable, and local model or
-sample-video configuration is understandable before testing a real MP4.
+The smoke test verifies the FastAPI app, local output directories, YOLO26n
+model setup, and a tiny detector inference pass before testing a real MP4.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -14,13 +14,20 @@ from typing import Callable
 
 from fastapi.testclient import TestClient
 
+logging.getLogger("app.main").setLevel(logging.ERROR)
+
 from app.api.analysis_service import AnalysisService
 from app.config import (
+    DEFAULT_DETECTOR_DEVICE,
     DEFAULT_DETECTOR_MODEL,
+    DETECTOR_DEVICE_ENV,
     DETECTOR_MODEL_ENV,
+    DetectorConfig,
     detector_model_status,
 )
 from app.main import create_app
+from app.vision.detector import DetectorDependencyError, DetectorInferenceError
+from app.vision.yolo_detector import verify_yolo_detector
 
 SAMPLE_VIDEO_ENV = "STABILITYNET_SAMPLE_VIDEO"
 DEFAULT_SAMPLE_VIDEO = "samples/test-video.mp4"
@@ -96,14 +103,39 @@ def _check_directories() -> None:
 
 
 def _check_model(result: SmokeResult) -> None:
-    model_status = detector_model_status(os.getenv(DETECTOR_MODEL_ENV, DEFAULT_DETECTOR_MODEL))
-    if model_status.status == "ready":
-        result.pass_check(f"YOLO model file exists: {model_status.resolved_path}")
+    model_name = os.getenv(DETECTOR_MODEL_ENV, DEFAULT_DETECTOR_MODEL)
+    device = os.getenv(DETECTOR_DEVICE_ENV, DEFAULT_DETECTOR_DEVICE)
+    model_status = detector_model_status(model_name)
+    if model_status.status == "missing" and model_status.can_auto_download:
+        print(
+            "INFO YOLO26n weights are missing; attempting automatic Ultralytics "
+            f"download to {model_status.resolved_path}"
+        )
+    elif model_status.status == "missing":
+        result.fail_check(
+            model_status.message or f"Set {DETECTOR_MODEL_ENV} before real analysis."
+        )
         return
-    if model_status.status == "configured":
-        result.pass_check(f"YOLO model reference configured: {model_status.configured_value}")
+
+    try:
+        verification = verify_yolo_detector(
+            DetectorConfig(model_name=model_name, device=device),
+            run_inference=True,
+        )
+    except DetectorDependencyError as exc:
+        result.fail_check(f"YOLO26n detector setup: {exc}")
         return
-    result.warn_check(model_status.message or f"Set {DETECTOR_MODEL_ENV} before real analysis.")
+    except DetectorInferenceError as exc:
+        result.fail_check(f"YOLO26n tiny inference pass: {exc}")
+        return
+
+    result.pass_check(f"YOLO26n model loaded successfully: {verification.model_path}")
+    result.pass_check(f"inference device: {verification.device}")
+    if verification.inference_ran:
+        result.pass_check(
+            "YOLO26n tiny inference pass completed "
+            f"({verification.detections_count} detections on blank frame)"
+        )
 
 
 def _check_sample_video(result: SmokeResult) -> None:

@@ -46,6 +46,9 @@ def health(request: Request) -> dict[str, object]:
         payload["detector_model_path"] = model_status.resolved_path
     if model_status.message is not None:
         payload["message"] = model_status.message
+    payload["detector_model_can_auto_download"] = model_status.can_auto_download
+    if model_status.download_url is not None:
+        payload["detector_model_download_url"] = model_status.download_url
     return payload
 
 

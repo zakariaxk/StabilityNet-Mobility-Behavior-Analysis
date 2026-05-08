@@ -39,7 +39,14 @@ def create_app(
     service = analysis_service or AnalysisService()
     model_status = detector_model_status(service.config.detector.model_name)
     if model_status.status == "missing":
-        logger.warning(model_status.message)
+        logger.warning(
+            model_status.message,
+            extra={
+                "detector_model": model_status.configured_value,
+                "detector_model_path": model_status.resolved_path,
+                "can_auto_download": model_status.can_auto_download,
+            },
+        )
     else:
         logger.info(
             "detector model configuration checked",

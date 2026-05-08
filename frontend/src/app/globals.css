@@ -635,6 +635,10 @@ svg {
   align-items: start;
 }
 
+.results-grid--analyzed {
+  grid-template-columns: minmax(0, 1.65fr) minmax(340px, 0.75fr);
+}
+
 .results-side {
   display: grid;
   gap: 16px;
@@ -646,11 +650,34 @@ svg {
   gap: 16px;
 }
 
+.annotated-panel--result {
+  padding: 18px;
+}
+
+.artifact-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.artifact-heading span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .video-frame {
   overflow: hidden;
   border-radius: 8px;
   background: #101817;
   aspect-ratio: 16 / 9;
+}
+
+.annotated-panel--result .video-frame {
+  min-height: min(62vh, 640px);
 }
 
 .annotated-video {

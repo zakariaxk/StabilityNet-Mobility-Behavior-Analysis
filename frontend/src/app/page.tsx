@@ -133,6 +133,7 @@ export default function StabilityNetPage() {
     [analysis?.result.frames, tracks]
   );
   const annotatedVideoUrl = analysis ? analysisVideoUrl(analysis) : null;
+  const hasAnalysisResult = analysis !== null;
   const framesProcessed = numberOrZero(
     readNumber(analysis?.summary, "frames_processed") ??
       analysis?.result.frames_processed
@@ -260,8 +261,8 @@ export default function StabilityNetPage() {
             processingFps={processingFps}
           />
 
-          <div className="results-grid">
-            <AnnotatedVideo videoUrl={annotatedVideoUrl} />
+          <div className={`results-grid${hasAnalysisResult ? " results-grid--analyzed" : ""}`}>
+            <AnnotatedVideo hasResult={hasAnalysisResult} videoUrl={annotatedVideoUrl} />
             <div className="results-side">
               <TracksTable tracks={trackRows} />
               <EventsTable events={events} />
@@ -542,10 +543,22 @@ function MetricCard({
   );
 }
 
-function AnnotatedVideo({ videoUrl }: { videoUrl: string | null }) {
+function AnnotatedVideo({
+  hasResult,
+  videoUrl
+}: {
+  hasResult: boolean;
+  videoUrl: string | null;
+}) {
   return (
-    <section className="panel annotated-panel" aria-labelledby="video-title">
-      <h2 id="video-title">4. Annotated Output</h2>
+    <section
+      className={`panel annotated-panel${hasResult ? " annotated-panel--result" : ""}`}
+      aria-labelledby="video-title"
+    >
+      <div className="artifact-heading">
+        <h2 id="video-title">4. Annotated Output</h2>
+        {hasResult ? <span>Primary output artifact</span> : null}
+      </div>
       <div className="video-frame">
         {videoUrl ? (
           <video

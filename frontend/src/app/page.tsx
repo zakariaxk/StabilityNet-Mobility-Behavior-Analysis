@@ -204,7 +204,7 @@ export default function StabilityNetPage() {
         <div className="content-inner">
           <Header health={health} />
 
-          <div className="input-grid">
+          <div className="input-grid" id="analysis">
             <UploadCard
               fileName={videoFile?.name}
               inputRef={fileInputRef}
@@ -281,10 +281,10 @@ function Sidebar() {
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary">
-        <SidebarLink active icon={<ChartIcon />} label="Analysis" />
-        <SidebarLink icon={<FolderIcon />} label="Samples" />
-        <SidebarLink icon={<PanelIcon />} label="Results" />
-        <SidebarLink icon={<InfoIcon />} label="About" />
+        <SidebarLink active href="#analysis" icon={<ChartIcon />} label="Analysis" />
+        <SidebarLink href="#samples" icon={<FolderIcon />} label="Samples" />
+        <SidebarLink href="#results" icon={<PanelIcon />} label="Results" />
+        <SidebarLink href="#pipeline" icon={<InfoIcon />} label="About" />
       </nav>
 
       <div className="prototype-card">
@@ -301,15 +301,17 @@ function Sidebar() {
 
 function SidebarLink({
   active = false,
+  href,
   icon,
   label
 }: {
   active?: boolean;
+  href: string;
   icon: ReactNode;
   label: string;
 }) {
   return (
-    <a className={`sidebar-link${active ? " sidebar-link--active" : ""}`} href="#">
+    <a className={`sidebar-link${active ? " sidebar-link--active" : ""}`} href={href}>
       {icon}
       <span>{label}</span>
     </a>
@@ -393,7 +395,7 @@ function SampleVideos({
   onSelect: (sampleId: string) => void;
 }) {
   return (
-    <section className="panel samples-panel" aria-labelledby="samples-title">
+    <section className="panel samples-panel" id="samples" aria-labelledby="samples-title">
       <h2 id="samples-title">2. Or Try a Sample Video</h2>
       <div className="sample-grid">
         {SAMPLE_VIDEOS.map((sample) => (
@@ -524,7 +526,7 @@ function SummaryCards({
   processingFps: string;
 }) {
   return (
-    <section className="panel summary-panel" aria-labelledby="summary-title">
+    <section className="panel summary-panel" id="results" aria-labelledby="summary-title">
       <h2 id="summary-title">3. Analysis Summary</h2>
       <div className="metric-grid">
         <MetricCard icon={<ActivityIcon />} label="Status" value={status} />
@@ -753,7 +755,7 @@ function PipelineSection() {
   ];
 
   return (
-    <section className="panel pipeline-panel" aria-labelledby="pipeline-title">
+    <section className="panel pipeline-panel" id="pipeline" aria-labelledby="pipeline-title">
       <h2 id="pipeline-title">7. Analysis Pipeline</h2>
       <div className="pipeline-steps">
         {steps.map((step, index) => (

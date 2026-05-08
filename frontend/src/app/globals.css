@@ -31,6 +31,10 @@ body {
   min-height: 100%;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   background: var(--app-bg);
@@ -184,6 +188,13 @@ svg {
   display: grid;
   gap: 24px;
   width: min(100%, 1400px);
+}
+
+#analysis,
+#samples,
+#results,
+#pipeline {
+  scroll-margin-top: 32px;
 }
 
 .hero-header {

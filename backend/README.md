@@ -33,6 +33,26 @@ python3 -m app.cli analyze \
   --detector-model yolo26s.pt
 ```
 
+## Model Weights
+
+The API expects YOLO weights at `backend/yolo26n.pt` by default. You can keep
+weights somewhere else by setting `STABILITYNET_DETECTOR_MODEL` to an existing
+`.pt` file:
+
+```bash
+export STABILITYNET_DETECTOR_MODEL=/absolute/path/to/yolo26n.pt
+```
+
+Relative `.pt` paths are resolved from the backend folder. If the file is
+missing, the API returns HTTP 503 with the exact expected path and the env var
+to set.
+
+Check local readiness without running inference:
+
+```bash
+python smoke_test.py
+```
+
 ## Minimal API
 
 Run the local API from the `backend` folder:

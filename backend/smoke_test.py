@@ -15,7 +15,11 @@ from typing import Callable
 from fastapi.testclient import TestClient
 
 from app.api.analysis_service import AnalysisService
-from app.config import DEFAULT_DETECTOR_MODEL, DETECTOR_MODEL_ENV
+from app.config import (
+    DEFAULT_DETECTOR_MODEL,
+    DETECTOR_MODEL_ENV,
+    detector_model_status,
+)
 from app.main import create_app
 
 SAMPLE_VIDEO_ENV = "STABILITYNET_SAMPLE_VIDEO"
@@ -92,14 +96,14 @@ def _check_directories() -> None:
 
 
 def _check_model(result: SmokeResult) -> None:
-    model_path = Path(os.getenv(DETECTOR_MODEL_ENV, DEFAULT_DETECTOR_MODEL))
-    if model_path.exists():
-        result.pass_check(f"YOLO model file exists: {model_path}")
+    model_status = detector_model_status(os.getenv(DETECTOR_MODEL_ENV, DEFAULT_DETECTOR_MODEL))
+    if model_status.status == "ready":
+        result.pass_check(f"YOLO model file exists: {model_status.resolved_path}")
         return
-    result.warn_check(
-        "YOLO model file is missing. Place weights at "
-        f"{model_path} or set {DETECTOR_MODEL_ENV} before real analysis."
-    )
+    if model_status.status == "configured":
+        result.pass_check(f"YOLO model reference configured: {model_status.configured_value}")
+        return
+    result.warn_check(model_status.message or f"Set {DETECTOR_MODEL_ENV} before real analysis.")
 
 
 def _check_sample_video(result: SmokeResult) -> None:

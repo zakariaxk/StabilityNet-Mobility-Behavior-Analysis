@@ -1,5 +1,6 @@
 """FastAPI application for StabilityNet."""
 
+import logging
 import os
 
 from fastapi import FastAPI
@@ -8,6 +9,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.analysis_service import AnalysisService
 from app.api.routes import router
+from app.config import detector_model_status
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CORS_ORIGINS = [
     "http://localhost:3000",
@@ -33,6 +37,18 @@ def create_app(
 ) -> FastAPI:
     origins = cors_origins or _cors_origins_from_env()
     service = analysis_service or AnalysisService()
+    model_status = detector_model_status(service.config.detector.model_name)
+    if model_status.status == "missing":
+        logger.warning(model_status.message)
+    else:
+        logger.info(
+            "detector model configuration checked",
+            extra={
+                "status": model_status.status,
+                "detector_model": model_status.configured_value,
+                "detector_model_path": model_status.resolved_path,
+            },
+        )
     app = FastAPI(title="StabilityNet API")
     app.add_middleware(
         CORSMiddleware,

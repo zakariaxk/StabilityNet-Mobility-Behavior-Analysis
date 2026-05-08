@@ -14,6 +14,7 @@ from app.api.analysis_service import (
     InvalidUploadError,
 )
 from app.api.schemas import AnalysisCreateRequest, AnalysisRecord
+from app.config import detector_model_status
 from app.pipeline.annotated_video import VideoWriteError
 from app.pipeline.frame_reader import VideoDependencyError, VideoOpenError
 from app.pipeline.video_pipeline import AnalysisPipelineError
@@ -33,8 +34,19 @@ NO_VIDEO_MESSAGE = "Upload an MP4 file or select a sample video before running a
 
 
 @router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health(request: Request) -> dict[str, object]:
+    service = _analysis_service(request)
+    model_status = detector_model_status(service.config.detector.model_name)
+    payload: dict[str, object] = {
+        "status": "ok",
+        "detector_model_status": model_status.status,
+        "detector_model": model_status.configured_value,
+    }
+    if model_status.resolved_path is not None:
+        payload["detector_model_path"] = model_status.resolved_path
+    if model_status.message is not None:
+        payload["message"] = model_status.message
+    return payload
 
 
 @router.post(

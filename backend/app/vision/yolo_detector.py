@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from app.config import DetectorConfig
+from app.config import (
+    DetectorConfig,
+    detector_model_missing_message,
+    detector_model_path,
+    is_local_detector_model_reference,
+    resolve_detector_model_reference,
+)
 from app.schemas.detection import BoundingBox, Detection
 from app.vision.detector import DetectorDependencyError, DetectorInferenceError
 
@@ -25,6 +30,7 @@ class YOLOPersonDetector:
     """Detect people in frames using Ultralytics YOLO."""
 
     def __init__(self, config: DetectorConfig) -> None:
+        _validate_model_reference(config.model_name)
         if YOLO is None:
             raise DetectorDependencyError(
                 "Ultralytics is required for YOLO detection. Install backend "
@@ -112,17 +118,18 @@ def _tensor_list(value: Any) -> list[float]:
 
 def _load_model(model_name: str) -> Any:
     _validate_model_reference(model_name)
+    model_reference = resolve_detector_model_reference(model_name)
     with _MODEL_CACHE_LOCK:
-        cached_model = _MODEL_CACHE.get(model_name)
+        cached_model = _MODEL_CACHE.get(model_reference)
         if cached_model is not None:
             return cached_model
         try:
-            model = YOLO(model_name)
+            model = YOLO(model_reference)
         except Exception as exc:
             raise DetectorDependencyError(
-                f"Could not load YOLO model weights: {model_name}."
+                f"Could not load YOLO model weights: {model_reference}."
             ) from exc
-        _MODEL_CACHE[model_name] = model
+        _MODEL_CACHE[model_reference] = model
         return model
 
 
@@ -132,12 +139,12 @@ def _validate_model_reference(model_name: str) -> None:
             "YOLO model weights are not configured. Set STABILITYNET_DETECTOR_MODEL."
         )
 
-    model_path = Path(model_name)
-    if model_path.suffix.lower() == ".pt" and not model_path.exists():
-        raise DetectorDependencyError(
-            "YOLO model weights not found. Place the weights file at "
-            f"{model_path} or set STABILITYNET_DETECTOR_MODEL to an existing .pt file."
-        )
+    if not is_local_detector_model_reference(model_name):
+        return
+
+    model_path = detector_model_path(model_name)
+    if not model_path.exists():
+        raise DetectorDependencyError(detector_model_missing_message(model_name))
 
 
 def _model_device(model: Any) -> str:

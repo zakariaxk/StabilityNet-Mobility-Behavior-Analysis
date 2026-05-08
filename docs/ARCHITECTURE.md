@@ -8,7 +8,7 @@ The first implementation is an offline backend pipeline.
 ```text
 video file
   -> OpenCV frame reader
-  -> YOLOv8n person detector
+  -> YOLO26n person detector
   -> SORT-style tracker
   -> per-track temporal state
   -> behavior feature extraction
@@ -31,6 +31,14 @@ logic.
 ## Phase 2 API Flow
 
 ```text
+POST /analyses/upload with MP4 file
+  -> uploaded file saved under backend/outputs/uploads
+  -> synchronous pipeline run
+  -> JSON record written under backend/outputs/analyses
+  -> analysis ID, compact summary, and video URL returned
+  -> GET /analyses/{analysis_id} retrieves the saved record
+  -> GET /analyses/{analysis_id}/video streams the uploaded MP4
+
 POST /analyses with local video path
   -> synchronous pipeline run
   -> JSON record written under backend/outputs/analyses

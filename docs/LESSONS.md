@@ -16,3 +16,5 @@
   preserves the CLI and makes later queue/database work easier to add.
 - Browser-based clients need CORS even for local development. Support only local
   Next.js development origins for now.
+- Local file paths are useful for backend debugging but poor user experience.
+  The review UI should make upload-and-review the primary workflow.

@@ -43,3 +43,19 @@ video output has been inspected.
 API records include compact frame, track, and event counts so UI clients do not
 need to infer basic totals from the full nested pipeline output. This remains a
 disk-backed Phase 2 contract and does not require Redis or PostgreSQL.
+
+## ADR-007: Support Direct MP4 Upload Before Job Queues
+
+The UI should not require users to type backend-local sample paths. Phase 2
+accepts MP4 uploads, saves them under ignored local output storage, analyzes the
+saved file synchronously, and exposes the uploaded video for playback. Redis and
+PostgreSQL remain deferred until the synchronous upload path is validated with
+real videos.
+
+## ADR-008: Upgrade Default Detector To YOLO26n
+
+Ultralytics YOLO26n replaces YOLOv8n as the default person detector because it
+keeps the nano-size deployment profile while improving current speed and
+accuracy expectations. The existing detector wrapper and JSON output contract
+stay unchanged, and the CLI exposes `--detector-model` so local runs can compare
+other YOLO26 variants or custom `.pt` weights without changing code.

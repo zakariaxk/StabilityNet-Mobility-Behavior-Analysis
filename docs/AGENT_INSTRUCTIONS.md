@@ -17,7 +17,7 @@ phase and prefer clear, testable modules over broad infrastructure.
 ## Current Stack
 
 - Python
-- PyTorch through Ultralytics YOLOv8n
+- PyTorch through Ultralytics YOLO26n
 - OpenCV
 - NumPy
 - SORT-style tracking

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" role="img" aria-label="Assisted walking sample thumbnail">
+  <rect width="320" height="180" rx="14" fill="#edf3f1"/>
+  <path d="M0 0h320v42H0z" fill="#dce5e1"/>
+  <path d="M36 180 126 42h68l90 138Z" fill="#d7d1c7"/>
+  <path d="M126 42h68v138h-68z" fill="#eee8df"/>
+  <path d="M76 50h42v105H76zM202 50h42v105h-42z" fill="#c8d1cd"/>
+  <path d="M89 135h77M101 135v43M154 135v43M102 157h52" stroke="#5d6f6b" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="132" cy="77" r="12" fill="#d0ab8d"/>
+  <path d="M121 93h22l8 60h-38z" fill="#254f4b"/>
+  <path d="m121 151-8 29M143 151l9 29M120 106l-23 19M143 106l27 9" stroke="#25312f" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="184" cy="80" r="12" fill="#d0ab8d"/>
+  <path d="M173 96h22l8 57h-38z" fill="#2c6e6a"/>
+  <path d="m173 151-8 29M195 151l9 29M172 110l-20 10M195 109l24 18" stroke="#25312f" stroke-width="7" stroke-linecap="round"/>
+</svg>

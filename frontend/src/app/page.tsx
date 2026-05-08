@@ -21,12 +21,15 @@ import {
 const FALLBACK_ANALYSIS_ERROR =
   "Upload an MP4 file or select a sample video before running analysis.";
 
+const SAMPLE_THUMBNAIL_BASE_PATH = "/samples/thumbnails";
+
 const SAMPLE_VIDEOS = [
   {
     id: "hallway-walk",
     title: "Hallway Walk",
     duration: "00:19",
     videoPath: "samples/test-video.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/hallway-walk.svg`,
     variant: "hallway"
   },
   {
@@ -34,6 +37,7 @@ const SAMPLE_VIDEOS = [
     title: "Assisted Walking",
     duration: "00:23",
     videoPath: "samples/assisted-walking.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/assisted-walking.svg`,
     variant: "assisted"
   },
   {
@@ -41,6 +45,7 @@ const SAMPLE_VIDEOS = [
     title: "Rehabilitation",
     duration: "00:27",
     videoPath: "samples/rehabilitation.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/rehabilitation.svg`,
     variant: "rehab"
   },
   {
@@ -48,6 +53,7 @@ const SAMPLE_VIDEOS = [
     title: "Imbalance Event",
     duration: "00:21",
     videoPath: "samples/imbalance-event.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/imbalance-event.svg`,
     variant: "imbalance"
   }
 ] as const;
@@ -427,9 +433,20 @@ function SampleThumbnail({
   sample: SampleVideo;
   selected: boolean;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(sample.thumbnailSrc) && !imageFailed;
+
   return (
     <div className={`sample-thumb sample-thumb--${sample.variant}`}>
-      <ClinicalScene variant={sample.variant} />
+      {showImage ? (
+        <img
+          src={sample.thumbnailSrc}
+          alt={`${sample.title} sample thumbnail`}
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <ThumbnailFallback variant={sample.variant} />
+      )}
       <span className="duration-pill">{sample.duration}</span>
       {selected ? (
         <span className="selected-check" aria-label="Selected">
@@ -440,58 +457,12 @@ function SampleThumbnail({
   );
 }
 
-function ClinicalScene({ variant }: { variant: SampleVideo["variant"] }) {
-  const secondPerson = variant === "assisted" || variant === "rehab";
-  const walkingAid = variant === "assisted" || variant === "rehab";
-  const imbalance = variant === "imbalance";
-
+function ThumbnailFallback({ variant }: { variant: SampleVideo["variant"] }) {
   return (
-    <svg
-      className="clinical-scene"
-      viewBox="0 0 240 136"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <rect width="240" height="136" rx="10" fill="#ECEAE4" />
-      <path d="M0 0h240v36H0z" fill="#D9DED8" />
-      <path d="M0 136 88 36h64l88 100Z" fill="#CFC8BC" />
-      <path d="M88 36h64v100H88z" fill="#E8E2D8" />
-      <path d="M28 38h42v84H28zM170 38h42v84h-42z" fill="#BFC7C1" opacity="0.58" />
-      <path d="M87 36 42 136M153 36l45 100" stroke="#AAB6B2" strokeWidth="3" />
-      <path d="M96 54h48M92 76h56M88 99h64" stroke="#D5D0C8" strokeWidth="2" />
-      <Figure x={imbalance ? 112 : 106} y={48} color="#254F4B" lean={imbalance ? -8 : 0} />
-      {secondPerson ? <Figure x={146} y={52} color="#2C6E6A" lean={0} /> : null}
-      {walkingAid ? <Walker x={94} y={86} /> : null}
-    </svg>
-  );
-}
-
-function Figure({
-  x,
-  y,
-  color,
-  lean
-}: {
-  x: number;
-  y: number;
-  color: string;
-  lean: number;
-}) {
-  return (
-    <g transform={`translate(${x} ${y}) rotate(${lean} 12 32)`}>
-      <circle cx="12" cy="8" r="8" fill="#CFAF92" />
-      <path d="M7 19h13l6 37H1z" fill={color} />
-      <path d="M6 55 0 91M20 55l10 91" stroke="#2D3634" strokeWidth="6" strokeLinecap="round" />
-      <path d="M5 28-9 48M21 28l16 12" stroke={color} strokeWidth="5" strokeLinecap="round" />
-    </g>
-  );
-}
-
-function Walker({ x, y }: { x: number; y: number }) {
-  return (
-    <g transform={`translate(${x} ${y})`} stroke="#6E7976" strokeWidth="4" fill="none">
-      <path d="M0 0h54M8 0v38M46 0v38M8 20h38" strokeLinecap="round" />
-    </g>
+    <div className={`thumbnail-fallback thumbnail-fallback--${variant}`}>
+      <VideoIcon />
+      <span>Sample MP4</span>
+    </div>
   );
 }
 

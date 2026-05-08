@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" role="img" aria-label="Rehabilitation sample thumbnail">
+  <rect width="320" height="180" rx="14" fill="#eef3f2"/>
+  <path d="M0 0h320v42H0z" fill="#dbe4e1"/>
+  <path d="M36 180 126 42h68l90 138Z" fill="#d9d2c7"/>
+  <path d="M126 42h68v138h-68z" fill="#eee8df"/>
+  <path d="M67 52h55v100H67zM199 52h55v100h-55z" fill="#c9d2ce"/>
+  <path d="M85 137h86M98 137v42M160 137v42M98 158h62" stroke="#5d6f6b" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="140" cy="76" r="12" fill="#d0ab8d"/>
+  <path d="M129 93h22l7 60h-36z" fill="#254f4b"/>
+  <path d="m128 151-11 29M151 151l8 29M128 108l-24 16M151 108l25 9" stroke="#25312f" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="188" cy="78" r="12" fill="#d0ab8d"/>
+  <path d="M177 94h22l8 59h-38z" fill="#2c6e6a"/>
+  <path d="m177 151-8 29M199 151l10 29M176 108l-23 10M199 108l24 20" stroke="#25312f" stroke-width="7" stroke-linecap="round"/>
+  <path d="M225 128h48" stroke="#2c6e6a" stroke-width="4" stroke-linecap="round"/>
+</svg>

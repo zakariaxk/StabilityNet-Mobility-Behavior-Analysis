@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 from pathlib import Path
@@ -95,10 +96,20 @@ class AnalysisService:
             config=self.config,
         )
         result = self._runner(request)
+        result = _normalize_result(result)
 
         record: dict[str, object] = {
             "analysis_id": analysis_id,
-            "status": "completed",
+            "status": result["status"],
+            "frames_processed": result["frames_processed"],
+            "tracks_count": result["tracks_count"],
+            "events_count": result["events_count"],
+            "fps": result["fps"],
+            "processing_fps": result["processing_fps"],
+            "annotated_video_url": result["annotated_video_url"],
+            "tracks": result["tracks"],
+            "events": result["events"],
+            "message": result["message"],
             "video_path": str(video_path),
             "result_path": str(result_path),
             "source": source,
@@ -164,9 +175,12 @@ def _summarize_result(result: dict[str, object]) -> dict[str, object]:
 
     return {
         "frames_processed": frames_processed if isinstance(frames_processed, int) else 0,
+        "processing_fps": _finite_number(result.get("processing_fps")),
         "track_count": len(tracks),
+        "tracks_count": len(tracks),
         "confirmed_track_count": _confirmed_track_count(tracks),
         "event_count": len(events),
+        "events_count": len(events),
         "event_counts_by_type": _event_counts(events, "event_type"),
         "event_counts_by_severity": _event_counts(events, "severity"),
     }
@@ -194,3 +208,153 @@ def _event_counts(events: list[object], key: str) -> dict[str, int]:
             continue
         counts[value] = counts.get(value, 0) + 1
     return counts
+
+
+def _normalize_result(result: dict[str, object]) -> dict[str, object]:
+    payload = dict(result)
+    video = payload.get("video")
+    video_metadata = video if isinstance(video, dict) else {}
+    frames_processed = _int_value(payload.get("frames_processed"), default=0)
+    tracks = _normalize_tracks(payload.get("tracks"))
+    events = _normalize_events(payload.get("events"))
+    fps = _finite_number(payload.get("fps")) or _finite_number(video_metadata.get("fps"))
+
+    payload["status"] = _string_value(payload.get("status")) or "completed"
+    payload["frames_processed"] = frames_processed
+    payload["tracks_count"] = _int_value(payload.get("tracks_count"), default=len(tracks))
+    payload["events_count"] = _int_value(payload.get("events_count"), default=len(events))
+    payload["fps"] = fps
+    payload["processing_fps"] = _finite_number(payload.get("processing_fps"))
+    payload["annotated_video_url"] = _string_value(payload.get("annotated_video_url"))
+    payload["tracks"] = tracks
+    payload["events"] = events
+    payload["message"] = _string_value(payload.get("message"))
+    return payload
+
+
+def _normalize_tracks(value: object) -> list[dict[str, object]]:
+    tracks: list[dict[str, object]] = []
+    if not isinstance(value, list):
+        return tracks
+
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        track = dict(item)
+        features = track.get("features")
+        feature_record = features if isinstance(features, dict) else {}
+        track_id = _int_value(track.get("id"), default=None)
+        if track_id is None:
+            track_id = _int_value(track.get("track_id"), default=None)
+        if track_id is None:
+            continue
+
+        first_timestamp = _finite_number(track.get("first_timestamp_s"))
+        last_timestamp = _finite_number(track.get("last_timestamp_s"))
+        duration_seconds = _finite_number(track.get("duration_seconds"))
+        if duration_seconds is None:
+            duration_seconds = _finite_number(feature_record.get("duration_s"))
+        if duration_seconds is None and first_timestamp is not None and last_timestamp is not None:
+            duration_seconds = max(0.0, last_timestamp - first_timestamp)
+
+        frames = _int_value(track.get("frames"), default=None)
+        if frames is None:
+            frames = _int_value(track.get("observations"), default=None)
+        if frames is None:
+            frames = _int_value(feature_record.get("observations"), default=0)
+
+        track["id"] = track_id
+        track["track_id"] = track_id
+        track["duration_seconds"] = duration_seconds if duration_seconds is not None else 0.0
+        track["frames"] = frames
+        track["avg_confidence"] = _finite_number(
+            track.get("avg_confidence"),
+            track.get("average_confidence"),
+        )
+        trajectory = track.get("trajectory")
+        track["trajectory"] = trajectory if isinstance(trajectory, list) else []
+        tracks.append(track)
+
+    return tracks
+
+
+def _normalize_events(value: object) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    if not isinstance(value, list):
+        return events
+
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        event = dict(item)
+        event_type = _event_type_label(_string_value(event.get("event_type")))
+        time_seconds = _finite_number(event.get("time_seconds"), event.get("timestamp_s"))
+        description = (
+            _string_value(event.get("description"))
+            or _string_value(event.get("reason"))
+            or _default_event_description(event_type)
+        )
+        severity = _severity_value(event.get("severity"))
+
+        event["time_seconds"] = time_seconds if time_seconds is not None else 0.0
+        event["timestamp_s"] = time_seconds if time_seconds is not None else 0.0
+        event["event_type"] = event_type
+        event["description"] = description
+        event["reason"] = description
+        event["severity"] = severity
+        events.append(event)
+
+    return events
+
+
+def _event_type_label(value: str | None) -> str:
+    labels = {
+        "low_mobility_speed": "Slow Walking",
+        "prolonged_dwell": "Prolonged Stop",
+        "high_position_variance": "Tracking Instability",
+    }
+    if value is None:
+        return "Tracking Instability"
+    return labels.get(value, value)
+
+
+def _default_event_description(event_type: str) -> str:
+    descriptions = {
+        "Slow Walking": "Reduced movement speed detected.",
+        "Prolonged Stop": "Prolonged stop detected.",
+        "Direction Change": "Direction change detected.",
+        "Tracking Instability": "Unstable tracking movement detected.",
+        "Assistance Proximity": "Assistance proximity detected.",
+    }
+    return descriptions.get(event_type, "Mobility event detected.")
+
+
+def _severity_value(value: object) -> str:
+    if isinstance(value, str) and value.lower() in {"low", "medium", "high"}:
+        return value.lower()
+    return "low"
+
+
+def _int_value(value: object, default: int | None = 0) -> int | None:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return int(value)
+    return default
+
+
+def _finite_number(*values: object) -> float | None:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            number = float(value)
+            if math.isfinite(number):
+                return number
+    return None
+
+
+def _string_value(value: object) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None

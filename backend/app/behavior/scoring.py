@@ -26,12 +26,9 @@ class EventScorer:
                 self._event(
                     features,
                     timestamp_s,
-                    event_type="prolonged_dwell",
+                    event_type="Prolonged Stop",
                     score=score,
-                    reason=(
-                        "track remained within the dwell radius for "
-                        f"{features.dwell_time_s:.2f}s"
-                    ),
+                    reason="Prolonged stop detected.",
                 )
             )
 
@@ -44,12 +41,9 @@ class EventScorer:
                 self._event(
                     features,
                     timestamp_s,
-                    event_type="low_mobility_speed",
+                    event_type="Slow Walking",
                     score=score,
-                    reason=(
-                        "mean movement speed is below threshold at "
-                        f"{features.mean_speed_px_s:.2f}px/s"
-                    ),
+                    reason="Reduced movement speed detected.",
                 )
             )
 
@@ -62,12 +56,9 @@ class EventScorer:
                 self._event(
                     features,
                     timestamp_s,
-                    event_type="high_position_variance",
+                    event_type="Tracking Instability",
                     score=score,
-                    reason=(
-                        "position variance is above threshold at "
-                        f"{features.position_variance_px2:.2f}px^2"
-                    ),
+                    reason="Unstable tracking movement detected.",
                 )
             )
 

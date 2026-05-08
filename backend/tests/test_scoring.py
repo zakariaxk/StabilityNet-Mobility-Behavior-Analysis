@@ -22,8 +22,9 @@ class EventScoringTests(unittest.TestCase):
 
         self.assertEqual(
             [event.event_type for event in events],
-            ["prolonged_dwell", "low_mobility_speed", "high_position_variance"],
+            ["Prolonged Stop", "Slow Walking", "Tracking Instability"],
         )
+        self.assertEqual(events[1].reason, "Reduced movement speed detected.")
         self.assertTrue(all(event.track_id == 7 for event in events))
         self.assertTrue(all(event.feature_snapshot["track_id"] == 7 for event in events))
 
@@ -38,4 +39,3 @@ class EventScoringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

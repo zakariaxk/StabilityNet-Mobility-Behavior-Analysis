@@ -20,11 +20,12 @@ class BehaviorEvent:
         return {
             "event_id": self.event_id,
             "track_id": self.track_id,
+            "time_seconds": self.timestamp_s,
             "event_type": self.event_type,
+            "description": self.reason,
             "severity": self.severity,
             "score": self.score,
             "timestamp_s": self.timestamp_s,
             "reason": self.reason,
             "feature_snapshot": self.feature_snapshot,
         }
-

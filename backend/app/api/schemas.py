@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 
 
 class AnalysisCreateRequest(BaseModel):
-    video_path: str = Field(
-        ...,
+    video_path: str | None = Field(
+        None,
         description="Local path to a video file, such as samples/test-video.mp4.",
     )
 
@@ -17,6 +17,15 @@ class AnalysisCreateRequest(BaseModel):
 class AnalysisRecord(BaseModel):
     analysis_id: str
     status: str
+    frames_processed: int = 0
+    tracks_count: int = 0
+    events_count: int = 0
+    fps: float | None = None
+    processing_fps: float | None = None
+    annotated_video_url: str | None = None
+    tracks: list[dict[str, Any]] = Field(default_factory=list)
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    message: str | None = None
     video_path: str
     result_path: str
     source: str = "local_path"

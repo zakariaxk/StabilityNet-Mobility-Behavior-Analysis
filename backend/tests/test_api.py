@@ -43,14 +43,25 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(create_response.status_code, 201)
             created = create_response.json()
             self.assertEqual(created["status"], "completed")
+            self.assertEqual(created["frames_processed"], 0)
+            self.assertEqual(created["tracks_count"], 0)
+            self.assertEqual(created["events_count"], 1)
+            self.assertIsNone(created["fps"])
+            self.assertIsNone(created["processing_fps"])
+            self.assertIsNone(created["annotated_video_url"])
+            self.assertEqual(created["tracks"], [])
+            self.assertEqual(created["events"][0]["event_type"], "Slow Walking")
+            self.assertEqual(created["events"][0]["severity"], "medium")
             self.assertEqual(created["video_path"], "samples/test-video.mp4")
             self.assertEqual(created["result"]["analysis_version"], "test")
+            self.assertEqual(created["result"]["status"], "completed")
+            self.assertEqual(created["result"]["events"][0]["event_type"], "Slow Walking")
             self.assertEqual(created["summary"]["frames_processed"], 0)
             self.assertEqual(created["summary"]["track_count"], 0)
             self.assertEqual(created["summary"]["event_count"], 1)
             self.assertEqual(
                 created["summary"]["event_counts_by_type"],
-                {"low_mobility_speed": 1},
+                {"Slow Walking": 1},
             )
 
             get_response = client.get(f"/analyses/{created['analysis_id']}")

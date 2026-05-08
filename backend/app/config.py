@@ -45,3 +45,5 @@ class AnalysisRequest:
     video_path: Path
     output_path: Path
     config: PipelineConfig = PipelineConfig()
+    annotated_video_path: Path | None = None
+    annotated_video_url: str | None = None

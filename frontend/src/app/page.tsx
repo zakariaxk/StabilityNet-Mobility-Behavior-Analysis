@@ -6,6 +6,7 @@ import type {
   ReactNode,
   SVGProps
 } from "react";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -133,7 +134,6 @@ export default function StabilityNetPage() {
 
   useEffect(() => {
     if (!isSubmitting) {
-      setProcessingStageIndex(0);
       return;
     }
 
@@ -192,6 +192,7 @@ export default function StabilityNetPage() {
       setError(errorMessage(caughtError) || FALLBACK_ANALYSIS_ERROR);
     } finally {
       setIsSubmitting(false);
+      setProcessingStageIndex(0);
     }
   }
 
@@ -481,10 +482,12 @@ function SampleThumbnail({
   return (
     <div className={`sample-thumb sample-thumb--${sample.variant}`}>
       {showImage ? (
-        <img
+        <Image
           src={sample.thumbnailSrc}
           alt={`${sample.title} sample thumbnail`}
+          fill
           onError={() => setImageFailed(true)}
+          sizes="(max-width: 640px) 100vw, (max-width: 900px) 45vw, 14vw"
         />
       ) : (
         <ThumbnailFallback variant={sample.variant} />

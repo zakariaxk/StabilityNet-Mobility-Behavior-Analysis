@@ -7,7 +7,9 @@ from fastapi.testclient import TestClient
 from app.api.analysis_service import AnalysisService
 from app.config import AnalysisRequest
 from app.main import create_app
+from app.pipeline.video_pipeline import AnalysisPipelineError
 from app.pipeline.result_writer import write_json
+from app.vision.detector import DetectorInferenceError
 
 
 def fake_runner(request: AnalysisRequest) -> dict[str, object]:
@@ -27,6 +29,14 @@ def fake_runner(request: AnalysisRequest) -> dict[str, object]:
     }
     write_json(request.output_path, result)
     return result
+
+
+def pipeline_error_runner(request: AnalysisRequest) -> dict[str, object]:
+    raise AnalysisPipelineError("Analysis failed while processing frame 3.")
+
+
+def inference_error_runner(request: AnalysisRequest) -> dict[str, object]:
+    raise DetectorInferenceError("YOLO inference failed while processing a frame.")
 
 
 class ApiTests(unittest.TestCase):
@@ -195,6 +205,38 @@ class ApiTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 400)
             self.assertEqual(response.json()["detail"], "Uploaded MP4 file is empty.")
+
+    def test_returns_clean_pipeline_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=pipeline_error_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post(
+                "/analyses/upload",
+                files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+            )
+
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(
+                response.json()["detail"],
+                "Analysis failed while processing frame 3.",
+            )
+
+    def test_returns_clean_inference_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=inference_error_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post(
+                "/analyses/upload",
+                files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+            )
+
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(
+                response.json()["detail"],
+                "YOLO inference failed while processing a frame.",
+            )
 
     def test_allows_local_nextjs_dev_origin(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

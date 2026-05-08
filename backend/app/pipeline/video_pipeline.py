@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import UTC, datetime
 
@@ -10,11 +11,18 @@ from app.behavior.features import BehaviorFeatures, extract_features
 from app.behavior.scoring import EventScorer
 from app.behavior.track_state import TrackStore
 from app.config import AnalysisRequest
-from app.pipeline.frame_reader import VideoFrameReader
+from app.pipeline.frame_reader import VideoFrameReader, VideoOpenError
 from app.pipeline.result_writer import write_json
 from app.schemas.tracking import TrackObservation
+from app.vision.detector import DetectorInferenceError
 from app.vision.sort_tracker import SortTracker
 from app.vision.yolo_detector import YOLOPersonDetector
+
+logger = logging.getLogger(__name__)
+
+
+class AnalysisPipelineError(RuntimeError):
+    """Raised when analysis fails inside the per-frame pipeline."""
 
 
 def analyze_video(request: AnalysisRequest) -> dict[str, object]:
@@ -25,6 +33,7 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
     """
 
     started_at = time.perf_counter()
+    logger.info("analysis started", extra={"video_path": str(request.video_path)})
     reader = VideoFrameReader(
         request.video_path,
         fallback_fps=request.config.fallback_fps,
@@ -42,8 +51,15 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
     events: list[BehaviorEvent] = []
     emitted_event_keys: set[tuple[int, str]] = set()
     for frame in reader.frames(max_frames=request.config.max_frames):
-        detections = detector.detect(frame.image)
-        observations = tracker.update(detections, frame.index, frame.timestamp_s)
+        try:
+            detections = detector.detect(frame.image)
+            observations = tracker.update(detections, frame.index, frame.timestamp_s)
+        except DetectorInferenceError:
+            raise
+        except Exception as exc:
+            raise AnalysisPipelineError(
+                f"Analysis failed while processing frame {frame.index}."
+            ) from exc
         all_observations.extend(observations)
         frame_features: list[BehaviorFeatures] = []
         frame_events: list[BehaviorEvent] = []
@@ -71,6 +87,9 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         )
         frames_processed += 1
 
+    if frames_processed == 0:
+        raise VideoOpenError("Video file contains no readable frames.")
+
     tracks = _summarize_tracks(all_observations, latest_features)
     event_payloads = [event.to_dict() for event in events]
     processing_seconds = time.perf_counter() - started_at
@@ -97,6 +116,15 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         "events": event_payloads,
     }
     write_json(request.output_path, result)
+    logger.info(
+        "analysis completed",
+        extra={
+            "video_path": str(request.video_path),
+            "frames_processed": frames_processed,
+            "tracks_count": len(tracks),
+            "events_count": len(event_payloads),
+        },
+    )
     return result
 
 

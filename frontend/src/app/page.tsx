@@ -159,6 +159,7 @@ export default function StabilityNetPage() {
   );
   const annotatedVideoUrl = analysis ? analysisVideoUrl(analysis) : null;
   const hasAnalysisResult = analysis !== null;
+  const videoDurationSeconds = readNumber(analysis?.result.video, "duration_s");
   const framesProcessed = numberOrZero(
     readNumber(analysis?.summary, "frames_processed") ??
       analysis?.result.frames_processed
@@ -297,7 +298,12 @@ export default function StabilityNetPage() {
           />
 
           <div className={`results-grid${hasAnalysisResult ? " results-grid--analyzed" : ""}`}>
-            <AnnotatedVideo hasResult={hasAnalysisResult} videoUrl={annotatedVideoUrl} />
+            <AnnotatedVideo
+              events={events}
+              hasResult={hasAnalysisResult}
+              videoDurationSeconds={videoDurationSeconds}
+              videoUrl={annotatedVideoUrl}
+            />
             <div className="results-side">
               <TracksTable tracks={trackRows} />
               <EventsTable events={events} />
@@ -610,10 +616,14 @@ function MetricCard({
 }
 
 function AnnotatedVideo({
+  events,
   hasResult,
+  videoDurationSeconds,
   videoUrl
 }: {
+  events: BehaviorEvent[];
   hasResult: boolean;
+  videoDurationSeconds?: number;
   videoUrl: string | null;
 }) {
   return (
@@ -641,7 +651,56 @@ function AnnotatedVideo({
           </div>
         )}
       </div>
+      <EventMarkers events={events} videoDurationSeconds={videoDurationSeconds} />
     </section>
+  );
+}
+
+function EventMarkers({
+  events,
+  videoDurationSeconds
+}: {
+  events: BehaviorEvent[];
+  videoDurationSeconds?: number;
+}) {
+  const timedEvents = events
+    .map((event) => ({
+      event,
+      timestamp: readNumber(event, "timestamp_s")
+    }))
+    .filter(
+      (entry): entry is { event: BehaviorEvent; timestamp: number } =>
+        entry.timestamp !== undefined
+    );
+
+  if (timedEvents.length === 0) {
+    return null;
+  }
+
+  const maxEventTime = Math.max(...timedEvents.map((entry) => entry.timestamp));
+  const duration = Math.max(videoDurationSeconds ?? maxEventTime, maxEventTime, 1);
+
+  return (
+    <div className="event-marker-strip" aria-label="Video event markers">
+      <div className="event-marker-track">
+        {timedEvents.map(({ event, timestamp }, index) => {
+          const severityTone = severityClass(readString(event, "severity") ?? "low");
+          const left = Math.min(100, Math.max(0, (timestamp / duration) * 100));
+
+          return (
+            <span
+              className={`event-marker event-marker--${severityTone}`}
+              key={event.event_id ?? `${event.track_id}-${event.event_type}-${index}`}
+              style={{ left: `${left}%` }}
+              title={`${formatOptionalDecimal(timestamp)}s: ${humanizeEventType(
+                readString(event, "event_type") ?? "event"
+              )}`}
+            />
+          );
+        })}
+      </div>
+      <span>Mobility event markers</span>
+    </div>
   );
 }
 

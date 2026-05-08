@@ -770,6 +770,46 @@ svg {
   line-height: 1.45;
 }
 
+.event-marker-strip {
+  display: grid;
+  gap: 7px;
+}
+
+.event-marker-strip > span {
+  color: var(--muted-light);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.event-marker-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: #eef4f3;
+}
+
+.event-marker {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--card-bg);
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+}
+
+.event-marker--low {
+  background: var(--low-text);
+}
+
+.event-marker--medium {
+  background: var(--medium-text);
+}
+
+.event-marker--high {
+  background: var(--high-text);
+}
+
 .table-panel {
   overflow: hidden;
 }

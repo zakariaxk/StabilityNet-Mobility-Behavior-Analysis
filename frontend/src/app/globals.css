@@ -820,12 +820,13 @@ svg {
   gap: 16px;
   align-items: center;
   border-bottom: 1px solid var(--border-subtle);
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
 
 .table-heading span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .table-wrap {
@@ -834,29 +835,29 @@ svg {
 
 table {
   width: 100%;
-  min-width: 560px;
+  min-width: 520px;
   border-collapse: collapse;
 }
 
 th,
 td {
   border-bottom: 1px solid var(--border-subtle);
-  padding: 11px 16px;
+  padding: 9px 14px;
   text-align: left;
   vertical-align: middle;
 }
 
 th {
-  color: #20312e;
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 750;
   line-height: 1.2;
 }
 
 td {
   color: #263633;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12.5px;
+  line-height: 1.35;
 }
 
 tbody tr:last-child td {
@@ -871,8 +872,8 @@ tbody tr:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 34px;
-  min-height: 24px;
+  min-width: 30px;
+  min-height: 22px;
   border: 1px solid #cde5e2;
   border-radius: 6px;
   background: var(--soft-teal);
@@ -912,8 +913,8 @@ tbody tr:hover {
 }
 
 .trajectory {
-  width: 96px;
-  height: 28px;
+  width: 86px;
+  height: 24px;
   color: var(--primary);
 }
 
@@ -975,7 +976,7 @@ tbody tr:hover {
 .empty-state {
   display: grid;
   gap: 5px;
-  padding: 28px 16px;
+  padding: 20px 16px;
   text-align: center;
 }
 

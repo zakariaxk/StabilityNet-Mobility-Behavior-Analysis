@@ -53,6 +53,10 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Local model weights are downloaded per-machine and should not be committed.
+backend/*.pt
+weights/
+
 # Translations
 *.mo
 *.pot

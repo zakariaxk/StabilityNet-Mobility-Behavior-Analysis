@@ -2,9 +2,9 @@
 
 Offline-first video mobility analysis backend for StabilityNet.
 
-Phase 1 keeps the backend runnable from the command line while the core video
-pipeline is developed. FastAPI, Redis, PostgreSQL, and the Next.js UI are deferred
-until the analysis pipeline produces useful structured outputs.
+The backend runs local MP4 analysis through FastAPI or the CLI. The detector
+uses Ultralytics YOLO26n PyTorch weights, OpenCV frame IO, and SORT-style
+tracking. It is CPU-first for local demos.
 
 ## Development
 
@@ -23,8 +23,8 @@ python3 -m unittest discover -s tests
 python3 -m app.cli analyze --video path/to/video.mp4 --output outputs/result.json
 ```
 
-The CLI uses Ultralytics YOLO26n by default. To compare a different detector
-weights file, pass `--detector-model`:
+The CLI uses Ultralytics YOLO26n by default. To compare a different existing
+detector weights file, pass `--detector-model`:
 
 ```bash
 python3 -m app.cli analyze \
@@ -35,22 +35,56 @@ python3 -m app.cli analyze \
 
 ## Model Weights
 
-The API expects YOLO weights at `backend/yolo26n.pt` by default. You can keep
-weights somewhere else by setting `STABILITYNET_DETECTOR_MODEL` to an existing
-`.pt` file:
+The detector uses the Ultralytics package from `pyproject.toml`
+(`ultralytics>=8.4.0`) and expects the YOLO26n detection weights file:
+
+```text
+yolo26n.pt
+```
+
+By default, the file should exist here:
+
+```text
+backend/yolo26n.pt
+```
+
+The smoke test and the first real detector initialization can auto-download the
+official Ultralytics `yolo26n.pt` file to that path when internet access is
+available. The cached file is ignored by git.
+
+Manual download URL:
+
+```text
+https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt
+```
+
+You can keep weights somewhere else by setting `STABILITYNET_DETECTOR_MODEL` to
+an existing `.pt` file:
 
 ```bash
 export STABILITYNET_DETECTOR_MODEL=/absolute/path/to/yolo26n.pt
 ```
 
 Relative `.pt` paths are resolved from the backend folder. If the file is
-missing, the API returns HTTP 503 with the exact expected path and the env var
-to set.
+missing and it is not the official `yolo26n.pt` name, the API returns HTTP 503
+with the exact expected path and the env var to set.
 
-Check local readiness without running inference:
+The demo defaults to CPU. To intentionally use another available PyTorch
+device, set `STABILITYNET_DETECTOR_DEVICE` to `auto`, `mps`, `cuda`, `cuda:0`,
+or a CUDA device index.
+
+Verify the model loads and can run a tiny inference pass:
 
 ```bash
 python smoke_test.py
+```
+
+Expected YOLO lines include:
+
+```text
+PASS YOLO26n model loaded successfully: /.../backend/yolo26n.pt
+PASS inference device: CPU
+PASS YOLO26n tiny inference pass completed
 ```
 
 ## Minimal API

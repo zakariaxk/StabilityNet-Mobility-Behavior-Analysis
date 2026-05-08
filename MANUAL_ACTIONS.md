@@ -46,10 +46,23 @@ brew install ffmpeg
 backend/yolo26n.pt
 ```
 
+The smoke test can download this file automatically if your computer has
+internet access. Manual download URL:
+
+```text
+https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt
+```
+
 Or point the backend at another existing `.pt` file:
 
 ```bash
 export STABILITYNET_DETECTOR_MODEL=/absolute/path/to/yolo26n.pt
+```
+
+Leave the detector on CPU for the first demo:
+
+```bash
+export STABILITYNET_DETECTOR_DEVICE=cpu
 ```
 
 4. Start the backend:
@@ -66,8 +79,8 @@ uvicorn app.main:app --reload
 curl http://127.0.0.1:8000/health
 ```
 
-Confirm it returns `"status":"ok"` and does not report a missing detector
-model.
+Confirm it returns `"status":"ok"`. After the smoke test downloads or verifies
+weights, it should report `"detector_model_status":"ready"`.
 
 6. Run the smoke test:
 
@@ -75,6 +88,14 @@ model.
 cd /Users/zakariakhan/Documents/StabilityNet/backend
 source .venv/bin/activate
 python smoke_test.py
+```
+
+Confirm these lines appear:
+
+```text
+PASS YOLO26n model loaded successfully: /Users/zakariakhan/Documents/StabilityNet/backend/yolo26n.pt
+PASS inference device: CPU
+PASS YOLO26n tiny inference pass completed
 ```
 
 7. Upload one MP4 with curl or the helper script:
@@ -218,8 +239,8 @@ python3 -m app.cli analyze --video samples/test-video.mp4 --output outputs/resul
 
 Replace `samples/test-video.mp4` with the name of your real video file.
 
-The analyzer uses YOLO26n by default. To compare another Ultralytics detector
-model, add `--detector-model`, for example:
+The analyzer uses YOLO26n by default. To compare another existing Ultralytics
+detector weights file, add `--detector-model`, for example:
 
 ```bash
 python3 -m app.cli analyze \
@@ -230,11 +251,33 @@ python3 -m app.cli analyze \
 
 ## 7. Confirm Model Weights
 
-The backend does not silently download YOLO weights. A real analysis needs the
-weights file at:
+The backend uses Ultralytics YOLO26n detection weights through the
+`ultralytics` Python package. A real analysis needs this exact file:
+
+```text
+yolo26n.pt
+```
+
+The default location is:
 
 ```text
 backend/yolo26n.pt
+```
+
+Run the smoke test from the `backend` folder to auto-download the official file
+when internet access is available:
+
+```bash
+python smoke_test.py
+```
+
+The downloaded file is cached locally at `backend/yolo26n.pt` and is ignored by
+git.
+
+If automatic download fails, download this file manually:
+
+```text
+https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt
 ```
 
 Or this environment variable must point to an existing `.pt` file:
@@ -244,7 +287,14 @@ export STABILITYNET_DETECTOR_MODEL=/absolute/path/to/yolo26n.pt
 ```
 
 If the file is missing, `/health`, the smoke test, and analysis responses tell
-you the exact expected path.
+you the exact expected path and whether automatic download is available.
+
+The backend is CPU-first. Keep this setting for demo runs unless you
+intentionally want to use an accelerator:
+
+```bash
+export STABILITYNET_DETECTOR_DEVICE=cpu
+```
 
 ## 8. Check That It Worked
 
@@ -367,13 +417,16 @@ python smoke_test.py
 ```
 
 Warnings for a missing YOLO weights file or missing sample video are expected
-until you add those local files. A real analysis needs `yolo26n.pt` in the
-backend folder or `STABILITYNET_DETECTOR_MODEL` set to an existing `.pt` file.
+until the smoke test downloads the weights or you add local files. A real
+analysis needs `yolo26n.pt` in the backend folder or
+`STABILITYNET_DETECTOR_MODEL` set to an existing `.pt` file.
 
 Manual backend test:
 
 1. Start the backend with `uvicorn app.main:app --reload`.
-2. Open `http://127.0.0.1:8000/health` and confirm it returns `{"status":"ok"}`.
+2. Open `http://127.0.0.1:8000/health` and confirm it returns `{"status":"ok"}`
+   with `"detector_model_status":"ready"` after the smoke test has verified the
+   model.
 3. Upload a small MP4 with the `/analyses/upload` curl command above.
 4. Confirm the JSON response includes `status`, `frames_processed`,
    `tracks_count`, `events_count`, `annotated_video_url`, `tracks`, `events`,

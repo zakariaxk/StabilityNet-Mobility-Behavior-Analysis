@@ -194,6 +194,12 @@ Start the API:
 uvicorn app.main:app --reload
 ```
 
+You can also run this from the `backend` folder:
+
+```bash
+uvicorn main:app --reload
+```
+
 Leave that Terminal window open.
 
 Open a second Terminal window, go to the backend folder again, and run this with
@@ -214,13 +220,15 @@ To see the saved result again, run:
 curl http://127.0.0.1:8000/analyses/YOUR_ANALYSIS_ID
 ```
 
-To view the uploaded video from the API, open this in your browser:
+To view the annotated video from the API, open this in your browser:
 
 ```text
 http://127.0.0.1:8000/analyses/YOUR_ANALYSIS_ID/video
 ```
 
-Replace `YOUR_ANALYSIS_ID` with the ID from the earlier response.
+Replace `YOUR_ANALYSIS_ID` with the ID from the earlier response. If annotated
+output was created, this route serves the annotated MP4. If not, it falls back
+to the uploaded MP4.
 
 ## 11. Try The Local API With A Backend Path
 
@@ -247,7 +255,47 @@ curl http://127.0.0.1:8000/analyses/YOUR_ANALYSIS_ID
 
 Replace `YOUR_ANALYSIS_ID` with the ID from the earlier response.
 
-## 12. Run The Local Frontend
+## 12. Backend Testing Checklist
+
+From the backend folder, run the smoke test before using real videos:
+
+```bash
+source .venv/bin/activate
+python smoke_test.py
+```
+
+Warnings for a missing YOLO weights file or missing sample video are expected
+until you add those local files. A real analysis needs `yolo26n.pt` in the
+backend folder or `STABILITYNET_DETECTOR_MODEL` set to an existing `.pt` file.
+
+Manual backend test:
+
+1. Start the backend with `uvicorn app.main:app --reload`.
+2. Open `http://127.0.0.1:8000/health` and confirm it returns `{"status":"ok"}`.
+3. Upload a small MP4 with the `/analyses/upload` curl command above.
+4. Confirm the JSON response includes `status`, `frames_processed`,
+   `tracks_count`, `events_count`, `annotated_video_url`, `tracks`, `events`,
+   and `message`.
+5. Open the returned `annotated_video_url` in the browser, prefixed with the
+   backend host, for example `http://127.0.0.1:8000/outputs/FILE.mp4`.
+6. Start the frontend and confirm it renders the annotated video after upload.
+7. If anything fails, check the backend terminal logs for the request, upload
+   save path, video open status, frame count, output write status, and error
+   context.
+
+If you send `{}` or an empty path to `/analyses`, the backend should return:
+
+```text
+Upload an MP4 file or select a sample video before running analysis.
+```
+
+If a selected sample path does not exist, the backend should return:
+
+```text
+Video file not found.
+```
+
+## 13. Run The Local Frontend
 
 The hosted-style demo uses the Next.js frontend and the FastAPI backend
 together.
@@ -277,7 +325,7 @@ http://localhost:3000
 The frontend sends uploads and sample analysis requests through its
 `/api/stabilitynet` proxy to the FastAPI backend.
 
-## 13. Add Real Sample Videos
+## 14. Add Real Sample Videos
 
 Sample videos should be short MP4 files that match the visible sample cards:
 
@@ -289,7 +337,7 @@ Sample videos should be short MP4 files that match the visible sample cards:
 These MP4s are not committed to git. Add them locally or upload them to the
 hosted backend storage used by your demo environment.
 
-## 14. Add Sample Thumbnails
+## 15. Add Sample Thumbnails
 
 The frontend reads sample thumbnails from:
 
@@ -312,7 +360,7 @@ If you use `.png`, `.jpg`, or `.webp` instead of `.svg`, update the
 frontend/src/app/page.tsx
 ```
 
-## 15. Annotated Outputs
+## 16. Annotated Outputs
 
 Uploaded MP4s are stored under:
 
@@ -324,6 +372,12 @@ Analysis JSON records are stored under:
 
 ```text
 backend/outputs/analyses/
+```
+
+Annotated videos are stored under:
+
+```text
+backend/outputs/videos/
 ```
 
 The frontend expects the backend response to include an annotated video URL when
@@ -339,10 +393,16 @@ video_url
 ```
 
 Relative URLs should point to backend API paths. The frontend will route them
-through `/api/stabilitynet`. The current upload flow still works with
-`video_url`, which serves the uploaded MP4.
+through `/api/stabilitynet`. Annotated backend URLs use:
 
-## 16. Test A Full Hosted Demo
+```text
+/outputs/<filename>.mp4
+```
+
+The compatibility route `/analyses/<analysis_id>/video` serves the annotated
+MP4 when it exists, then falls back to the uploaded MP4.
+
+## 17. Test A Full Hosted Demo
 
 Before showing the demo:
 
@@ -356,7 +416,7 @@ Before showing the demo:
 - Confirm tracks, motion trails, event severity badges, and event markers render
   when those fields are present.
 
-## 17. Explain The Demo Honestly
+## 18. Explain The Demo Honestly
 
 Use this explanation:
 

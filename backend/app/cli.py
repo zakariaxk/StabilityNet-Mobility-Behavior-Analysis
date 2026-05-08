@@ -6,7 +6,12 @@ import argparse
 from pathlib import Path
 
 from app import __version__
-from app.config import AnalysisRequest
+from app.config import (
+    AnalysisRequest,
+    DEFAULT_DETECTOR_MODEL,
+    DetectorConfig,
+    PipelineConfig,
+)
 from app.pipeline.frame_reader import VideoDependencyError, VideoOpenError
 from app.vision.detector import DetectorDependencyError
 
@@ -22,6 +27,14 @@ def build_parser() -> argparse.ArgumentParser:
     analyze = subparsers.add_parser("analyze", help="Analyze a local video file.")
     analyze.add_argument("--video", required=True, type=Path, help="Path to a video file.")
     analyze.add_argument("--output", required=True, type=Path, help="Path for JSON output.")
+    analyze.add_argument(
+        "--detector-model",
+        default=DEFAULT_DETECTOR_MODEL,
+        help=(
+            "Ultralytics detector weights to use "
+            f"(default: {DEFAULT_DETECTOR_MODEL})."
+        ),
+    )
 
     return parser
 
@@ -33,7 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "analyze":
         from app.pipeline.video_pipeline import analyze_video
 
-        request = AnalysisRequest(video_path=args.video, output_path=args.output)
+        request = AnalysisRequest(
+            video_path=args.video,
+            output_path=args.output,
+            config=PipelineConfig(
+                detector=DetectorConfig(model_name=args.detector_model),
+            ),
+        )
         try:
             result = analyze_video(request)
         except (DetectorDependencyError, VideoDependencyError, VideoOpenError) as exc:

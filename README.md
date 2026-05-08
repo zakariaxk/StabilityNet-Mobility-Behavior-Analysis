@@ -8,7 +8,7 @@ The system analyzes how individuals move over time by extracting temporal featur
 
 ## Core Features
 
-- Person detection using YOLOv8n (PyTorch)
+- Person detection using YOLO26n (PyTorch)
 - Multi-object tracking with persistent identities
 - Temporal feature extraction (dwell time, speed, position variance)
 - Behavior-based anomaly scoring
@@ -17,7 +17,7 @@ The system analyzes how individuals move over time by extracting temporal featur
 ## Tech Stack
 
 - Python, PyTorch, OpenCV
-- YOLOv8n (Ultralytics)
+- YOLO26n (Ultralytics)
 - FastAPI, Redis, PostgreSQL
 - Next.js, TypeScript
 

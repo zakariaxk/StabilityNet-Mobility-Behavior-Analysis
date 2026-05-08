@@ -11,6 +11,7 @@ export interface AnalysisCreateRequest {
 
 export interface AnalysisVideoMetadata {
   path?: string;
+  annotated_video_url?: string;
   fps?: number;
   frame_count?: number;
   width?: number;
@@ -43,6 +44,9 @@ export interface BehaviorEvent {
 export interface AnalysisResult {
   analysis_version?: string;
   created_at?: string;
+  annotated_video_url?: string;
+  output_video_url?: string;
+  processing_fps?: number;
   video?: AnalysisVideoMetadata;
   frames_processed?: number;
   frames?: unknown[];
@@ -56,6 +60,12 @@ export interface AnalysisRecord {
   status: string;
   video_path: string;
   result_path: string;
+  source?: string;
+  original_filename?: string;
+  annotated_video_url?: string;
+  output_video_url?: string;
+  video_url?: string;
+  summary?: Record<string, unknown>;
   result: AnalysisResult;
 }
 
@@ -84,13 +94,44 @@ export async function createAnalysis(
   });
 }
 
+export async function uploadAnalysis(file: File): Promise<AnalysisRecord> {
+  const formData = new FormData();
+  formData.set("file", file);
+
+  return requestJson<AnalysisRecord>("/analyses/upload", {
+    method: "POST",
+    body: formData
+  });
+}
+
 export async function getAnalysis(analysisId: string): Promise<AnalysisRecord> {
   return requestJson<AnalysisRecord>(`/analyses/${encodeURIComponent(analysisId)}`);
 }
 
+export function analysisVideoUrl(record: AnalysisRecord): string | null {
+  const videoUrl =
+    record.annotated_video_url ??
+    record.output_video_url ??
+    record.result.annotated_video_url ??
+    record.result.output_video_url ??
+    record.result.video?.annotated_video_url ??
+    record.video_url;
+
+  return videoUrl ? apiAssetUrl(videoUrl) : null;
+}
+
+function apiAssetUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  const normalizedPath = url.startsWith("/") ? url : `/${url}`;
+  return `${API_BASE_PATH}${normalizedPath}`;
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (init?.body && !headers.has("content-type")) {
+  if (typeof init?.body === "string" && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
   }
 

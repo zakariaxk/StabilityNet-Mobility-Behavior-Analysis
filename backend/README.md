@@ -23,6 +23,16 @@ python3 -m unittest discover -s tests
 python3 -m app.cli analyze --video path/to/video.mp4 --output outputs/result.json
 ```
 
+The CLI uses Ultralytics YOLO26n by default. To compare a different detector
+weights file, pass `--detector-model`:
+
+```bash
+python3 -m app.cli analyze \
+  --video path/to/video.mp4 \
+  --output outputs/result.json \
+  --detector-model yolo26s.pt
+```
+
 ## Minimal API
 
 Run the local API from the `backend` folder:
@@ -41,3 +51,10 @@ curl -X POST http://127.0.0.1:8000/analyses \
 
 API records include a compact `summary` section with frame, track, and event
 counts for UI clients.
+
+Upload an MP4 directly:
+
+```bash
+curl -X POST http://127.0.0.1:8000/analyses/upload \
+  -F "file=@samples/test-video.mp4;type=video/mp4"
+```

@@ -4,9 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+DEFAULT_DETECTOR_MODEL = "yolo26n.pt"
+
+
 @dataclass(frozen=True)
 class DetectorConfig:
-    model_name: str = "yolov8n.pt"
+    model_name: str = DEFAULT_DETECTOR_MODEL
     confidence_threshold: float = 0.35
     person_class_id: int = 0
 
@@ -42,4 +45,3 @@ class AnalysisRequest:
     video_path: Path
     output_path: Path
     config: PipelineConfig = PipelineConfig()
-

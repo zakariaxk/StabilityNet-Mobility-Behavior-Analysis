@@ -19,5 +19,8 @@ class AnalysisRecord(BaseModel):
     status: str
     video_path: str
     result_path: str
+    source: str = "local_path"
+    original_filename: str | None = None
+    video_url: str | None = None
     summary: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any]

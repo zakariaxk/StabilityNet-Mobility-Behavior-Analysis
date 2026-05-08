@@ -23,6 +23,14 @@ const FALLBACK_ANALYSIS_ERROR =
 
 const SAMPLE_THUMBNAIL_BASE_PATH = "/samples/thumbnails";
 
+const PROCESSING_STAGES = [
+  "Uploading video...",
+  "Running person detection...",
+  "Tracking subjects...",
+  "Analyzing motion events...",
+  "Preparing annotated output..."
+] as const;
+
 const SAMPLE_VIDEOS = [
   {
     id: "hallway-walk",
@@ -97,6 +105,7 @@ export default function StabilityNetPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [processingStageIndex, setProcessingStageIndex] = useState(0);
 
   useEffect(() => {
     let isCurrent = true;
@@ -121,6 +130,21 @@ export default function StabilityNetPage() {
       isCurrent = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSubmitting) {
+      setProcessingStageIndex(0);
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setProcessingStageIndex((currentIndex) =>
+        Math.min(currentIndex + 1, PROCESSING_STAGES.length - 1)
+      );
+    }, 1800);
+
+    return () => window.clearInterval(intervalId);
+  }, [isSubmitting]);
 
   const selectedSample = useMemo(
     () =>
@@ -155,6 +179,7 @@ export default function StabilityNetPage() {
     }
 
     setError(null);
+    setProcessingStageIndex(videoFile ? 0 : 1);
     setIsSubmitting(true);
 
     try {
@@ -244,6 +269,10 @@ export default function StabilityNetPage() {
               {isSubmitting ? "Analyzing..." : "Analyze Video"}
             </button>
           </div>
+
+          {isSubmitting ? (
+            <ProcessingPanel activeStageIndex={processingStageIndex} />
+          ) : null}
 
           <div className="notice-stack" aria-live="polite">
             {health.state === "error" ? (
@@ -487,6 +516,27 @@ function Alert({
       <strong>{title}</strong>
       <p>{children}</p>
     </div>
+  );
+}
+
+function ProcessingPanel({ activeStageIndex }: { activeStageIndex: number }) {
+  return (
+    <section className="processing-panel" aria-live="polite" aria-label="Analysis status">
+      <div>
+        <SpinnerIcon />
+        <strong>{PROCESSING_STAGES[activeStageIndex]}</strong>
+      </div>
+      <ol>
+        {PROCESSING_STAGES.map((stage, index) => (
+          <li
+            className={index <= activeStageIndex ? "processing-stage--active" : ""}
+            key={stage}
+          >
+            {stage}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

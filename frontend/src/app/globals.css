@@ -573,6 +573,59 @@ svg {
   line-height: 1.45;
 }
 
+.processing-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fbfdfc;
+  padding: 16px;
+}
+
+.processing-panel > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--primary);
+}
+
+.processing-panel svg {
+  width: 18px;
+  height: 18px;
+}
+
+.processing-panel strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.processing-panel ol {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.processing-panel li {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--card-bg);
+  padding: 8px 10px;
+  color: var(--muted-light);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.processing-stage--active {
+  border-color: #b9d4d1;
+  background: var(--soft-teal-icon);
+  color: var(--primary);
+}
+
 .summary-panel {
   display: grid;
   gap: 16px;
@@ -983,6 +1036,10 @@ tbody tr:hover {
   }
 
   .pipeline-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .processing-panel ol {
     grid-template-columns: 1fr;
   }
 

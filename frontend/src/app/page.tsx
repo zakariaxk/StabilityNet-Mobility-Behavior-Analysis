@@ -77,6 +77,7 @@ type TrackRow = {
   durationSeconds?: number;
   frames: number;
   averageConfidence?: number;
+  pathStability?: number;
   points: TrackPoint[];
 };
 
@@ -595,7 +596,7 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
                 <th>Duration (s)</th>
                 <th>Frames</th>
                 <th>Avg. Confidence</th>
-                <th>Trajectory</th>
+                <th>Motion Trail</th>
               </tr>
             </thead>
             <tbody>
@@ -610,7 +611,7 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
                   <td>{track.frames.toLocaleString()}</td>
                   <td>{formatOptionalDecimal(track.averageConfidence)}</td>
                   <td>
-                    <Trajectory points={track.points} tone={index % 4} />
+                    <TrajectoryCell track={track} tone={index % 4} />
                   </td>
                 </tr>
               ))}
@@ -679,6 +680,17 @@ function SeverityBadge({ severity }: { severity: string }) {
     <span className={`severity severity--${severityTone}`}>
       {capitalize(severityTone)}
     </span>
+  );
+}
+
+function TrajectoryCell({ track, tone }: { track: TrackRow; tone: number }) {
+  return (
+    <div className="trajectory-cell">
+      <Trajectory points={track.points} tone={tone} />
+      {track.pathStability !== undefined ? (
+        <small>Path Stability {formatOptionalDecimal(track.pathStability)}</small>
+      ) : null}
+    </div>
   );
 }
 
@@ -777,8 +789,10 @@ function buildTrackRows(
     .sort((left, right) => left - right)
     .map((id) => {
       const track = tracks.find((candidate) => candidate.track_id === id);
-      const points = observationsByTrack.get(id) ?? [];
       const featureRecord = isRecord(track?.features) ? track?.features : undefined;
+      const explicitTrajectory = trajectoryPointsFromTrack(track, featureRecord);
+      const observedPoints = observationsByTrack.get(id) ?? [];
+      const points = explicitTrajectory.length > 0 ? explicitTrajectory : observedPoints;
       const firstTimestamp =
         readNumber(track, "first_timestamp_s") ?? firstPointTimestamp(points);
       const lastTimestamp =
@@ -795,10 +809,90 @@ function buildTrackRows(
         id,
         durationSeconds,
         frames: Math.max(0, Math.round(framesCount ?? points.length)),
-        averageConfidence: averageConfidence(points),
+        averageConfidence:
+          readNumber(track, "average_confidence") ??
+          readNumber(track, "avg_confidence") ??
+          averageConfidence(points),
+        pathStability:
+          readNumber(track, "path_stability") ??
+          readNumber(track, "mobility_stability") ??
+          readNumber(featureRecord, "path_stability") ??
+          readNumber(featureRecord, "mobility_stability"),
         points
       };
     });
+}
+
+function trajectoryPointsFromTrack(
+  track: TrackSummary | undefined,
+  featureRecord: Record<string, unknown> | undefined
+): TrackPoint[] {
+  const candidates = [
+    track?.trajectory,
+    track?.motion_trail,
+    track?.motionTrail,
+    track?.path,
+    track?.points,
+    featureRecord?.trajectory,
+    featureRecord?.motion_trail,
+    featureRecord?.path
+  ];
+
+  for (const candidate of candidates) {
+    const points = parseTrajectoryPoints(candidate);
+    if (points.length > 0) {
+      return points;
+    }
+  }
+
+  return [];
+}
+
+function parseTrajectoryPoints(value: unknown): TrackPoint[] {
+  if (isRecord(value)) {
+    return parseTrajectoryPoints(value.points ?? value.centers ?? value.samples);
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((point) => parseTrajectoryPoint(point))
+    .filter((point): point is TrackPoint => point !== undefined);
+}
+
+function parseTrajectoryPoint(value: unknown): TrackPoint | undefined {
+  if (Array.isArray(value) && value.length >= 2) {
+    const [x, y, timestamp] = value;
+    if (isFiniteNumber(x) && isFiniteNumber(y)) {
+      return {
+        x,
+        y,
+        timestamp: isFiniteNumber(timestamp) ? timestamp : undefined
+      };
+    }
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const center = readCenter(value.center) ?? readCenter(value.xy);
+  const x = readNumber(value, "x") ?? center?.[0];
+  const y = readNumber(value, "y") ?? center?.[1];
+  if (x === undefined || y === undefined) {
+    return undefined;
+  }
+
+  return {
+    x,
+    y,
+    confidence: readNumber(value, "confidence"),
+    timestamp:
+      readNumber(value, "timestamp_s") ??
+      readNumber(value, "timestamp") ??
+      readNumber(value, "time_s")
+  };
 }
 
 function observationsFromFrames(
@@ -896,6 +990,10 @@ function safeUnknownArray(value: unknown): unknown[] {
 
 function numberOrZero(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function formatOptionalDecimal(value: number | undefined): string {

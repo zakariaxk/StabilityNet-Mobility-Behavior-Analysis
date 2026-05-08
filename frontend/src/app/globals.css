@@ -805,6 +805,19 @@ tbody tr:hover {
   color: #935047;
 }
 
+.trajectory-cell {
+  display: grid;
+  gap: 4px;
+  align-items: center;
+}
+
+.trajectory-cell small {
+  color: var(--muted-light);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .trajectory {
   width: 96px;
   height: 28px;

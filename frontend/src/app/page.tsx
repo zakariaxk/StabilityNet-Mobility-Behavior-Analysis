@@ -18,11 +18,14 @@ import {
   createAnalysis,
   uploadAnalysis
 } from "@/lib/stabilityNetApi";
+import {
+  SAMPLE_VIDEOS,
+  sampleUnavailableMessage
+} from "@/lib/sampleVideos";
+import type { SampleVideo } from "@/lib/sampleVideos";
 
 const FALLBACK_ANALYSIS_ERROR =
   "Upload an MP4 file or select a sample video before running analysis.";
-
-const SAMPLE_THUMBNAIL_BASE_PATH = "/samples/thumbnails";
 
 const PROCESSING_STAGES = [
   "Uploading video...",
@@ -31,43 +34,6 @@ const PROCESSING_STAGES = [
   "Analyzing motion events...",
   "Preparing annotated output..."
 ] as const;
-
-const SAMPLE_VIDEOS = [
-  {
-    id: "hallway-walk",
-    title: "Hallway Walk",
-    duration: "00:19",
-    videoPath: "samples/test-video.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/hallway-walk.svg`,
-    variant: "hallway"
-  },
-  {
-    id: "assisted-walking",
-    title: "Assisted Walking",
-    duration: "00:23",
-    videoPath: "samples/assisted-walking.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/assisted-walking.svg`,
-    variant: "assisted"
-  },
-  {
-    id: "rehabilitation",
-    title: "Rehabilitation",
-    duration: "00:27",
-    videoPath: "samples/rehabilitation.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/rehabilitation.svg`,
-    variant: "rehab"
-  },
-  {
-    id: "imbalance-event",
-    title: "Imbalance Event",
-    duration: "00:21",
-    videoPath: "samples/imbalance-event.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/imbalance-event.svg`,
-    variant: "imbalance"
-  }
-] as const;
-
-type SampleVideo = (typeof SAMPLE_VIDEOS)[number];
 
 type HealthState =
   | { state: "checking"; label: "Checking" }
@@ -103,6 +69,7 @@ export default function StabilityNetPage() {
     state: "checking",
     label: "Checking"
   });
+  const [unavailableSampleIds, setUnavailableSampleIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -202,8 +169,23 @@ export default function StabilityNetPage() {
         ? await uploadAnalysis(videoFile)
         : await createAnalysis({ video_path: selectedSample!.videoPath });
       setAnalysis(record);
+      if (selectedSample) {
+        setUnavailableSampleIds((sampleIds) =>
+          sampleIds.filter((sampleId) => sampleId !== selectedSample.id)
+        );
+      }
     } catch (caughtError: unknown) {
-      setError(errorMessage(caughtError) || FALLBACK_ANALYSIS_ERROR);
+      const message = errorMessage(caughtError) || FALLBACK_ANALYSIS_ERROR;
+      if (!videoFile && selectedSample && isMissingSampleError(message)) {
+        setUnavailableSampleIds((sampleIds) =>
+          sampleIds.includes(selectedSample.id)
+            ? sampleIds
+            : [...sampleIds, selectedSample.id]
+        );
+        setError(sampleUnavailableMessage(selectedSample));
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSubmitting(false);
       setProcessingStageIndex(0);
@@ -270,6 +252,7 @@ export default function StabilityNetPage() {
             />
             <SampleVideos
               selectedSampleId={selectedSampleId}
+              unavailableSampleIds={unavailableSampleIds}
               onSelect={handleSampleSelect}
             />
           </div>
@@ -452,32 +435,43 @@ function UploadCard({
 
 function SampleVideos({
   selectedSampleId,
+  unavailableSampleIds,
   onSelect
 }: {
   selectedSampleId: string | null;
+  unavailableSampleIds: string[];
   onSelect: (sampleId: string) => void;
 }) {
   return (
     <section className="panel samples-panel" id="samples" aria-labelledby="samples-title">
       <h2 id="samples-title">2. Or Try a Sample Video</h2>
       <div className="sample-grid">
-        {SAMPLE_VIDEOS.map((sample) => (
-          <button
-            key={sample.id}
-            className={`sample-card${
-              selectedSampleId === sample.id ? " sample-card--selected" : ""
-            }`}
-            type="button"
-            onClick={() => onSelect(sample.id)}
-          >
-            <SampleThumbnail sample={sample} selected={selectedSampleId === sample.id} />
-            <span>{sample.title}</span>
-          </button>
-        ))}
+        {SAMPLE_VIDEOS.map((sample) => {
+          const isUnavailable = unavailableSampleIds.includes(sample.id);
+
+          return (
+            <button
+              key={sample.id}
+              className={`sample-card${
+                selectedSampleId === sample.id ? " sample-card--selected" : ""
+              }${isUnavailable ? " sample-card--unavailable" : ""}`}
+              type="button"
+              onClick={() => onSelect(sample.id)}
+            >
+              <SampleThumbnail
+                sample={sample}
+                selected={selectedSampleId === sample.id}
+                unavailable={isUnavailable}
+              />
+              <span>{sample.title}</span>
+              {isUnavailable ? <small>Sample unavailable</small> : null}
+            </button>
+          );
+        })}
       </div>
       <p className="sample-note">
         <InfoIcon />
-        <span>Sample videos are anonymized and publicly available.</span>
+        <span>Add MP4s locally with the documented sample filenames.</span>
       </p>
     </section>
   );
@@ -485,10 +479,12 @@ function SampleVideos({
 
 function SampleThumbnail({
   sample,
-  selected
+  selected,
+  unavailable
 }: {
   sample: SampleVideo;
   selected: boolean;
+  unavailable: boolean;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(sample.thumbnailSrc) && !imageFailed;
@@ -507,6 +503,7 @@ function SampleThumbnail({
         <ThumbnailFallback variant={sample.variant} />
       )}
       <span className="duration-pill">{sample.duration}</span>
+      {unavailable ? <span className="unavailable-pill">Unavailable</span> : null}
       {selected ? (
         <span className="selected-check" aria-label="Selected">
           <CheckIcon />
@@ -1315,6 +1312,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected frontend error.";
+}
+
+function isMissingSampleError(message: string): boolean {
+  return message.toLowerCase().includes("video file not found");
 }
 
 function BaseIcon({ children, ...props }: IconProps & { children: ReactNode }) {

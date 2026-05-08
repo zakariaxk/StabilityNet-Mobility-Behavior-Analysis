@@ -402,11 +402,23 @@ svg {
   background: var(--soft-teal);
 }
 
+.sample-card--unavailable {
+  border-color: #efc4bd;
+  background: #fff7f5;
+}
+
 .sample-card > span {
   overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.25;
+}
+
+.sample-card small {
+  color: var(--error);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .sample-thumb {
@@ -461,6 +473,19 @@ svg {
   padding: 3px 7px;
   color: #ffffff;
   font-size: 12px;
+  font-weight: 800;
+}
+
+.unavailable-pill {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  min-height: 22px;
+  border-radius: 6px;
+  background: rgba(180, 35, 24, 0.9);
+  padding: 3px 7px;
+  color: #ffffff;
+  font-size: 11px;
   font-weight: 800;
 }
 

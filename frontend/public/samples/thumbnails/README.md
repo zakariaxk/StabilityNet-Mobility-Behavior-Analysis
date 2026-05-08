@@ -11,4 +11,7 @@ Use the same filenames so the frontend can load them without code changes:
 - `imbalance-event.svg`
 
 PNG, JPG, or WebP captures are also fine, but update `SAMPLE_VIDEOS` in
-`frontend/src/app/page.tsx` if the extension changes.
+`frontend/src/lib/sampleVideos.ts` if the extension changes.
+
+The matching MP4 files belong in `backend/samples/`; see
+`frontend/public/samples/README.md` for the full mapping.

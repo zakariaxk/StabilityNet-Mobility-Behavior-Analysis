@@ -11,7 +11,100 @@ computer first:
 - Python installed.
 - Project dependencies installed.
 - A video file to analyze.
-- Permission to download the YOLO26n model the first time the analyzer runs.
+- A local YOLO26n model weights file.
+
+## First Real Demo Test
+
+Use this checklist for the first end-to-end MP4 test.
+
+1. Install backend dependencies:
+
+```bash
+cd /Users/zakariakhan/Documents/StabilityNet/backend
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -e ".[dev]"
+```
+
+Install frontend dependencies:
+
+```bash
+cd /Users/zakariakhan/Documents/StabilityNet/frontend
+npm install
+```
+
+2. Install ffmpeg if needed:
+
+```bash
+ffmpeg -version
+brew install ffmpeg
+```
+
+3. Place model weights at:
+
+```text
+backend/yolo26n.pt
+```
+
+Or point the backend at another existing `.pt` file:
+
+```bash
+export STABILITYNET_DETECTOR_MODEL=/absolute/path/to/yolo26n.pt
+```
+
+4. Start the backend:
+
+```bash
+cd /Users/zakariakhan/Documents/StabilityNet/backend
+source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+5. Check `/health`:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Confirm it returns `"status":"ok"` and does not report a missing detector
+model.
+
+6. Run the smoke test:
+
+```bash
+cd /Users/zakariakhan/Documents/StabilityNet/backend
+source .venv/bin/activate
+python smoke_test.py
+```
+
+7. Upload one MP4 with curl or the helper script:
+
+```bash
+curl -X POST http://127.0.0.1:8000/analyses/upload \
+  -F "file=@/absolute/path/to/local-video.mp4;type=video/mp4"
+```
+
+```bash
+python test_video_upload.py /absolute/path/to/local-video.mp4
+```
+
+8. Open the returned annotated output URL in the browser:
+
+```text
+http://127.0.0.1:8000/outputs/<file>.mp4
+```
+
+9. Start the frontend:
+
+```bash
+cd /Users/zakariakhan/Documents/StabilityNet/frontend
+npm run dev
+```
+
+10. Open `http://localhost:3000` and upload the same MP4 through the UI.
+
+11. Verify the summary cards, tracks table, events table, and annotated video
+render from the real backend response.
 
 ## 1. Install Python
 
@@ -135,14 +228,23 @@ python3 -m app.cli analyze \
   --detector-model yolo26s.pt
 ```
 
-## 7. Allow The First Model Download
+## 7. Confirm Model Weights
 
-The first time you run the analyzer, it may download the YOLO26n AI model.
+The backend does not silently download YOLO weights. A real analysis needs the
+weights file at:
 
-This is expected.
+```text
+backend/yolo26n.pt
+```
 
-You need an internet connection for this first run. After the model is
-downloaded, later runs may not need to download it again.
+Or this environment variable must point to an existing `.pt` file:
+
+```bash
+export STABILITYNET_DETECTOR_MODEL=/absolute/path/to/yolo26n.pt
+```
+
+If the file is missing, `/health`, the smoke test, and analysis responses tell
+you the exact expected path.
 
 ## 8. Check That It Worked
 
@@ -473,9 +575,10 @@ ls samples
 
 Then run the analyzer again with the exact file name.
 
-### The First Run Is Slow
+### The First Real Run Is Slow
 
-This is normal. The first run may download the AI model and load it into memory.
+This is normal. The first real run loads the AI model into memory and processes
+every readable frame.
 
 Try again with a short video first.
 

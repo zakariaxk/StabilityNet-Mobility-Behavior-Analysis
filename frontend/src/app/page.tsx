@@ -963,6 +963,10 @@ function PipelineSection() {
           </div>
         ))}
       </div>
+      <div className="technical-metadata">
+        <span>Uploaded-video inference • YOLO26n • OpenCV • SORT tracking</span>
+        <span>Research prototype. Not a medical device.</span>
+      </div>
     </section>
   );
 }

@@ -151,21 +151,35 @@ export default function StabilityNetPage() {
       SAMPLE_VIDEOS.find((sample) => sample.id === selectedSampleId) ?? null,
     [selectedSampleId]
   );
-  const tracks = useMemo(() => safeArray(analysis?.result.tracks), [analysis]);
-  const events = useMemo(() => safeArray(analysis?.result.events), [analysis]);
+  const tracks = useMemo(() => analysisTracks(analysis), [analysis]);
+  const events = useMemo(() => analysisEvents(analysis), [analysis]);
   const trackRows = useMemo(
-    () => buildTrackRows(tracks, analysis?.result.frames),
-    [analysis?.result.frames, tracks]
+    () => buildTrackRows(tracks, analysis?.result?.frames),
+    [analysis?.result?.frames, tracks]
   );
   const annotatedVideoUrl = analysis ? analysisVideoUrl(analysis) : null;
   const hasAnalysisResult = analysis !== null;
-  const videoDurationSeconds = readNumber(analysis?.result.video, "duration_s");
+  const videoDurationSeconds = readNumber(analysis?.result?.video, "duration_s");
   const framesProcessed = numberOrZero(
-    readNumber(analysis?.summary, "frames_processed") ??
-      analysis?.result.frames_processed
+    analysis?.frames_processed ??
+      readNumber(analysis?.summary, "frames_processed") ??
+      analysis?.result?.frames_processed
+  );
+  const trackCount = numberOrZero(
+    analysis?.tracks_count ??
+      readNumber(analysis?.summary, "tracks_count") ??
+      readNumber(analysis?.summary, "track_count") ??
+      trackRows.length
+  );
+  const eventCount = numberOrZero(
+    analysis?.events_count ??
+      readNumber(analysis?.summary, "events_count") ??
+      readNumber(analysis?.summary, "event_count") ??
+      events.length
   );
   const processingFps = formatOptionalDecimal(
-    readNumber(analysis?.summary, "processing_fps") ??
+    analysis?.processing_fps ??
+      readNumber(analysis?.summary, "processing_fps") ??
       readNumber(analysis?.result, "processing_fps")
   );
   const optionalMetrics = useMemo(
@@ -292,8 +306,8 @@ export default function StabilityNetPage() {
           <SummaryCards
             status={analysis ? humanizeStatus(analysis.status) : "Idle"}
             framesProcessed={framesProcessed}
-            trackCount={trackRows.length}
-            eventCount={events.length}
+            trackCount={trackCount}
+            eventCount={eventCount}
             optionalMetrics={optionalMetrics}
             processingFps={processingFps}
           />
@@ -853,6 +867,18 @@ type MetricItem = {
   label: string;
   value: string;
 };
+
+function analysisTracks(analysis: AnalysisRecord | null): TrackSummary[] {
+  return safeArray(analysis?.tracks).length > 0
+    ? safeArray(analysis?.tracks)
+    : safeArray(analysis?.result?.tracks);
+}
+
+function analysisEvents(analysis: AnalysisRecord | null): BehaviorEvent[] {
+  return safeArray(analysis?.events).length > 0
+    ? safeArray(analysis?.events)
+    : safeArray(analysis?.result?.events);
+}
 
 function buildOptionalMetrics(analysis: AnalysisRecord | null): MetricItem[] {
   if (!analysis) {

@@ -42,11 +42,15 @@ export interface BehaviorEvent {
 }
 
 export interface AnalysisResult {
+  status?: string;
   analysis_version?: string;
   created_at?: string;
   annotated_video_url?: string;
   output_video_url?: string;
   processing_fps?: number;
+  tracks_count?: number;
+  events_count?: number;
+  message?: string | null;
   video?: AnalysisVideoMetadata;
   frames_processed?: number;
   frames?: unknown[];
@@ -58,15 +62,21 @@ export interface AnalysisResult {
 export interface AnalysisRecord {
   analysis_id: string;
   status: string;
-  video_path: string;
-  result_path: string;
+  frames_processed: number;
+  tracks_count: number;
+  events_count: number;
+  fps?: number | null;
+  processing_fps?: number | null;
+  annotated_video_url?: string | null;
+  tracks?: TrackSummary[];
+  events?: BehaviorEvent[];
+  message?: string | null;
   source?: string;
   original_filename?: string;
-  annotated_video_url?: string;
-  output_video_url?: string;
-  video_url?: string;
+  output_video_url?: string | null;
+  video_url?: string | null;
   summary?: Record<string, unknown>;
-  result: AnalysisResult;
+  result?: AnalysisResult;
 }
 
 const API_BASE_PATH = "/api/stabilitynet";
@@ -112,9 +122,9 @@ export function analysisVideoUrl(record: AnalysisRecord): string | null {
   const videoUrl =
     record.annotated_video_url ??
     record.output_video_url ??
-    record.result.annotated_video_url ??
-    record.result.output_video_url ??
-    record.result.video?.annotated_video_url ??
+    record.result?.annotated_video_url ??
+    record.result?.output_video_url ??
+    record.result?.video?.annotated_video_url ??
     record.video_url;
 
   return videoUrl ? apiAssetUrl(videoUrl) : null;

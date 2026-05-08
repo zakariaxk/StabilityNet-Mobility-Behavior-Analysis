@@ -722,39 +722,33 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
   return (
     <section className="panel table-panel" aria-labelledby="tracks-title">
       <div className="table-heading">
-        <h2 id="tracks-title">5. Tracked Subjects</h2>
-        <span>Total Subjects: {tracks.length.toLocaleString()}</span>
+        <h2 id="tracks-title">Tracked Subjects</h2>
+        <span>Total: {tracks.length.toLocaleString()}</span>
       </div>
       {tracks.length > 0 ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Duration (s)</th>
-                <th>Frames</th>
-                <th>Avg. Confidence</th>
-                <th>Motion Trail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tracks.map((track, index) => (
-                <tr key={track.id}>
-                  <td>
-                    <span className={`track-id track-id--${index % 4}`}>
-                      {track.id}
-                    </span>
-                  </td>
-                  <td>{formatOptionalDecimal(track.durationSeconds)}</td>
-                  <td>{track.frames.toLocaleString()}</td>
-                  <td>{formatOptionalDecimal(track.averageConfidence)}</td>
-                  <td>
-                    <TrajectoryCell track={track} tone={index % 4} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="subject-list">
+          {tracks.map((track, index) => (
+            <article className="subject-row" key={track.id}>
+              <div className="subject-row-main">
+                <span className={`track-id track-id--${index % 4}`}>{track.id}</span>
+                <div>
+                  <strong>Subject {track.id}</strong>
+                  <span>{track.frames.toLocaleString()} frames</span>
+                </div>
+              </div>
+              <dl className="subject-stats">
+                <div>
+                  <dt>Duration</dt>
+                  <dd>{formatOptionalDecimal(track.durationSeconds)}s</dd>
+                </div>
+                <div>
+                  <dt>Confidence</dt>
+                  <dd>{formatOptionalDecimal(track.averageConfidence)}</dd>
+                </div>
+              </dl>
+              <TrajectoryCell track={track} tone={index % 4} />
+            </article>
+          ))}
         </div>
       ) : (
         <EmptyState
@@ -770,37 +764,37 @@ function EventsTable({ events }: { events: BehaviorEvent[] }) {
   return (
     <section className="panel table-panel" aria-labelledby="events-title">
       <div className="table-heading">
-        <h2 id="events-title">6. Events Timeline</h2>
-        <span>Total Events: {events.length.toLocaleString()}</span>
+        <h2 id="events-title">Events Timeline</h2>
+        <span>Total: {events.length.toLocaleString()}</span>
       </div>
       {events.length > 0 ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Time (s)</th>
-                <th>Event Type</th>
-                <th>Description</th>
-                <th>Severity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event, index) => (
-                <tr key={event.event_id ?? `${event.track_id}-${event.event_type}-${index}`}>
-                  <td>{formatOptionalDecimal(readNumber(event, "timestamp_s"))}</td>
-                  <td>{humanizeEventType(readString(event, "event_type") ?? "event")}</td>
-                  <td>
-                    {readString(event, "reason") ??
-                      readString(event, "description") ??
-                      "Mobility pattern observed"}
-                  </td>
-                  <td>
-                    <SeverityBadge severity={readString(event, "severity") ?? "low"} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="event-list">
+          {events.map((event, index) => {
+            const timestamp = formatOptionalDecimal(readNumber(event, "timestamp_s"));
+            const eventType = humanizeEventType(
+              readString(event, "event_type") ?? "event"
+            );
+            const description =
+              readString(event, "reason") ??
+              readString(event, "description") ??
+              "Mobility pattern observed";
+
+            return (
+              <article
+                className="event-row"
+                key={event.event_id ?? `${event.track_id}-${event.event_type}-${index}`}
+              >
+                <div className="event-row-top">
+                  <strong>{eventType}</strong>
+                  <SeverityBadge severity={readString(event, "severity") ?? "low"} />
+                </div>
+                <p>{description}</p>
+                <span>
+                  {timestamp}s • Track {event.track_id}
+                </span>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <EmptyState

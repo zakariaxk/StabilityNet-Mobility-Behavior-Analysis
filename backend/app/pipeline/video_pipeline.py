@@ -692,9 +692,8 @@ def _normalize_display_event(
 def _event_type_label(event_type: str) -> str:
     labels = {
         "Prolonged Stop": "Movement anomaly",
-        "Tracking Instability": "Movement anomaly",
-        "Abrupt trajectory change": "Movement anomaly",
-        "Subject leaving frame": "Track ended near boundary",
+        "Tracking Instability": "Abrupt trajectory change",
+        "Subject leaving frame": "Track ended near frame boundary",
         "Slow Walking": "Slow walking",
     }
     return labels.get(event_type, event_type)
@@ -702,7 +701,7 @@ def _event_type_label(event_type: str) -> str:
 
 def _event_severity(event_type: str, severity: str) -> str:
     normalized = severity.lower()
-    if event_type in {"Insufficient visual evidence", "Track ended near boundary"}:
+    if event_type in {"Insufficient visual evidence", "Track ended near frame boundary"}:
         return "insufficient_evidence"
     if normalized in {"high", "review_needed", "normal", "insufficient_evidence"}:
         return normalized
@@ -718,7 +717,7 @@ def _event_priority(event_type: str, severity: str) -> int:
         return 5
     if severity == "high":
         return 10
-    if event_type == "Movement anomaly":
+    if event_type == "Abrupt trajectory change":
         return 25
     if event_type == "Camera motion uncertainty":
         return 35

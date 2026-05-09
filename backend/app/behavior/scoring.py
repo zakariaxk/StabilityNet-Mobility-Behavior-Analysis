@@ -32,12 +32,7 @@ class EventScorer:
             observation_confidence < self.config.min_event_confidence
             or features.observations < self.config.min_track_frames
         )
-        fall_like_evidence = _fall_like_motion_evidence(
-            features,
-            observation=observation,
-            frame_size=frame_size,
-            config=self.config,
-        )
+        strong_risk = _strong_mobility_risk(features, self.config)
         events: list[BehaviorEvent] = []
         if features.dwell_time_s >= self.config.dwell_time_threshold_s * 1.5:
             score = _ratio(features.dwell_time_s, self.config.dwell_time_threshold_s)
@@ -78,25 +73,6 @@ class EventScorer:
 
         anomaly_threshold = self.config.unstable_variance_threshold_px2 * 1.25
         if features.position_variance_px2 >= anomaly_threshold:
-            if fall_like_evidence["strong"]:
-                score = max(_ratio(features.position_variance_px2, anomaly_threshold), 0.82)
-                events.append(
-                    self._event(
-                        features,
-                        timestamp_s,
-                        event_type="Fall-like motion event",
-                        score=score,
-                        severity="high",
-                        reason=(
-                            "Strong fall-like posture transition detected after abrupt downward "
-                            "motion; review required."
-                        ),
-                        confidence=observation_confidence,
-                        display_priority=5,
-                    )
-                )
-                return events
-
             if near_frame_boundary or low_visual_evidence:
                 return events
 
@@ -104,16 +80,32 @@ class EventScorer:
                 features.position_variance_px2,
                 anomaly_threshold,
             )
+            if strong_risk:
+                score = max(score, 0.8)
+                event_type = (
+                    "Fall-like motion event"
+                    if _fall_like_motion(features, self.config)
+                    else "Abrupt trajectory change"
+                )
+                severity = "high"
+                reason = "Strong fall-like or abrupt motion evidence detected; requires review."
+                display_priority = 10
+            else:
+                score = min(score, 0.65)
+                event_type = "Abrupt trajectory change"
+                severity = "review_needed"
+                reason = "Trajectory irregularity detected; review needed."
+                display_priority = 35
             events.append(
                 self._event(
                     features,
                     timestamp_s,
-                    event_type="Movement anomaly",
-                    score=min(score, 0.65),
-                    severity="review_needed",
-                    reason="Movement pattern changed abruptly, but fall evidence is inconclusive.",
+                    event_type=event_type,
+                    score=score,
+                    severity=severity,
+                    reason=reason,
                     confidence=observation_confidence,
-                    display_priority=35,
+                    display_priority=display_priority,
                 )
             )
 
@@ -185,50 +177,28 @@ def _near_frame_boundary(
     )
 
 
-def _fall_like_motion_evidence(
-    features: BehaviorFeatures,
-    *,
-    observation: TrackObservation | None,
-    frame_size: tuple[int, int] | None,
-    config: BehaviorConfig,
-) -> dict[str, bool]:
-    frame_height = frame_size[1] if frame_size is not None else 0
-    center_y = observation.center[1] if observation is not None else 0.0
-    remains_visible = bool(
-        observation is not None
-        and observation.confidence >= max(0.34, config.min_event_confidence - 0.16)
-        and features.observations >= max(6, config.min_track_frames - 2)
+def _strong_mobility_risk(features: BehaviorFeatures, config: BehaviorConfig) -> bool:
+    abrupt_vertical_shift = features.recent_vertical_delta_px >= 28.0
+    abrupt_scale_change = features.bbox_height_change_ratio >= 0.28
+    sudden_stop_after_motion = bool(
+        features.mean_speed_px_s >= config.slow_speed_threshold_px_s * 2.2
+        and features.recent_speed_px_s <= config.slow_speed_threshold_px_s * 0.45
     )
-    abrupt_downward_center_motion = features.recent_vertical_delta_px >= 10.0
-    abrupt_downward_velocity = features.vertical_speed_px_s >= 95.0
-    posture_collapse = features.bbox_height_change_ratio >= 0.12
-    width_expansion = features.bbox_width_change_ratio >= 0.08
-    aspect_ratio_transition = features.bbox_aspect_ratio_change >= 0.08
-    low_wide_posture = features.recent_aspect_ratio >= 0.46
-    sudden_stop_after_drop = bool(
-        features.mean_speed_px_s >= config.slow_speed_threshold_px_s * 3.2
-        and features.recent_speed_px_s <= config.slow_speed_threshold_px_s * 1.4
+    repeated_direction_changes = bool(
+        features.direction_changes >= 6
+        and features.bbox_height_change_ratio >= 0.02
+        and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.6
     )
-    strong_motion_window = (
-        features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 2.4
+    return bool(
+        (abrupt_vertical_shift and abrupt_scale_change)
+        or sudden_stop_after_motion
+        or repeated_direction_changes
     )
-    near_floor = bool(frame_height > 0 and center_y >= frame_height * 0.62)
 
-    primary_motion = abrupt_downward_center_motion or abrupt_downward_velocity
-    posture_transition = posture_collapse and (width_expansion or aspect_ratio_transition)
-    support_signals = sum(
-        (
-            1 if low_wide_posture else 0,
-            1 if sudden_stop_after_drop else 0,
-            1 if strong_motion_window else 0,
-            1 if near_floor else 0,
-        )
+
+def _fall_like_motion(features: BehaviorFeatures, config: BehaviorConfig) -> bool:
+    return bool(
+        features.recent_vertical_delta_px >= 28.0
+        and features.bbox_height_change_ratio >= 0.28
+        and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25
     )
-    return {
-        "strong": bool(
-            remains_visible
-            and primary_motion
-            and posture_transition
-            and support_signals >= 2
-        )
-    }

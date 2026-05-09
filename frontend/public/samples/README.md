@@ -22,10 +22,10 @@ Filename mapping:
 
 | Card | Backend MP4 | Thumbnail |
 | --- | --- | --- |
-| Hallway Walk | `test-video.mp4` | `hallway-walk.svg` |
-| Assisted Walking | `assisted-walking.mp4` | `assisted-walking.svg` |
-| Rehabilitation | `rehabilitation.mp4` | `rehabilitation.svg` |
-| Imbalance Event | `imbalance-event.mp4` | `imbalance-event.svg` |
+| Office Hallway Walk | `office-hallway-walk.mp4` | `office-hallway-walk.jpg` |
+| Two-Person Approach (Side-by-Side) | `two-person-approach.mp4` | `two-person-approach.jpg` |
+| Assisted Walk (Sit Down) | `assisted-walk-sit.mp4` | `assisted-walk-sit.jpg` |
+| Warehouse Fall Event | `warehouse-fall.mp4` | `warehouse-fall.jpg` |
 
 If a thumbnail is missing or fails to load, the UI uses a safe visual fallback.
 If a backend MP4 is missing, the UI marks the sample card as unavailable after

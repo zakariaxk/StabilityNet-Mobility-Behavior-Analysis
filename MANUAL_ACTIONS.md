@@ -484,10 +484,10 @@ The frontend sends uploads and sample analysis requests through its
 
 Sample videos should be short MP4 files that match the visible sample cards:
 
-- `backend/samples/test-video.mp4` for Hallway Walk.
-- `backend/samples/assisted-walking.mp4` for Assisted Walking.
-- `backend/samples/rehabilitation.mp4` for Rehabilitation.
-- `backend/samples/imbalance-event.mp4` for Imbalance Event.
+- `backend/samples/office-hallway-walk.mp4` for Office Hallway Walk.
+- `backend/samples/two-person-approach.mp4` for Two-Person Approach (Side-by-Side).
+- `backend/samples/assisted-walk-sit.mp4` for Assisted Walk (Sit Down).
+- `backend/samples/warehouse-fall.mp4` for Warehouse Fall Event.
 
 These MP4s are not committed to git. Add them locally or upload them to the
 hosted backend storage used by your demo environment.
@@ -502,17 +502,16 @@ frontend/public/samples/thumbnails/
 
 Current placeholder files use these names:
 
-- `hallway-walk.svg`
-- `assisted-walking.svg`
-- `rehabilitation.svg`
-- `imbalance-event.svg`
+- `office-hallway-walk.jpg`
+- `two-person-approach.jpg`
+- `assisted-walk-sit.jpg`
+- `warehouse-fall.jpg`
 
 For a real demo, replace those files with frame captures from the matching MP4s.
-If you use `.png`, `.jpg`, or `.webp` instead of `.svg`, update the
-`thumbnailSrc` values in:
+If you use another image extension, update the `thumbnailSrc` values in:
 
 ```text
-frontend/src/app/page.tsx
+frontend/src/lib/sampleVideos.ts
 ```
 
 ## 16. Annotated Outputs

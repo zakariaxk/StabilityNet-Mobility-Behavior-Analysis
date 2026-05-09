@@ -34,7 +34,7 @@ The first screen supports direct `.mp4` upload and also keeps the backend-path
 debug workflow. A backend video path looks like:
 
 ```text
-samples/test-video.mp4
+samples/office-hallway-walk.mp4
 ```
 
 ## Validation

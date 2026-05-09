@@ -13,35 +13,35 @@ export interface SampleVideo {
 
 export const SAMPLE_VIDEOS: readonly SampleVideo[] = [
   {
-    id: "hallway-walk",
-    title: "Hallway Walk",
+    id: "office-hallway-walk",
+    title: "Office Hallway Walk",
     duration: "00:19",
-    videoPath: "samples/test-video.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/hallway-walk.svg`,
+    videoPath: "samples/office-hallway-walk.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/office-hallway-walk.jpg`,
     variant: "hallway"
   },
   {
-    id: "assisted-walking",
-    title: "Assisted Walking",
+    id: "assisted-walk-sit",
+    title: "Assisted Walk (Sit Down)",
     duration: "00:23",
-    videoPath: "samples/assisted-walking.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/assisted-walking.svg`,
+    videoPath: "samples/assisted-walk-sit.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/assisted-walk-sit.jpg`,
     variant: "assisted"
   },
   {
-    id: "rehabilitation",
-    title: "Rehabilitation",
+    id: "two-person-approach",
+    title: "Two-Person Approach (Side-by-Side)",
     duration: "00:27",
-    videoPath: "samples/rehabilitation.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/rehabilitation.svg`,
+    videoPath: "samples/two-person-approach.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/two-person-approach.jpg`,
     variant: "rehab"
   },
   {
-    id: "imbalance-event",
-    title: "Imbalance Event",
+    id: "warehouse-fall",
+    title: "Warehouse Fall Event",
     duration: "00:21",
-    videoPath: "samples/imbalance-event.mp4",
-    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/imbalance-event.svg`,
+    videoPath: "samples/warehouse-fall.mp4",
+    thumbnailSrc: `${SAMPLE_THUMBNAIL_BASE_PATH}/warehouse-fall.jpg`,
     variant: "imbalance"
   }
 ];

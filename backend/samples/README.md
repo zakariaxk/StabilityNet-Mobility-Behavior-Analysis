@@ -7,10 +7,10 @@ Expected demo filenames:
 
 | Frontend card | Backend MP4 |
 | --- | --- |
-| Hallway Walk | `backend/samples/test-video.mp4` |
-| Assisted Walking | `backend/samples/assisted-walking.mp4` |
-| Rehabilitation | `backend/samples/rehabilitation.mp4` |
-| Imbalance Event | `backend/samples/imbalance-event.mp4` |
+| Office Hallway Walk | `backend/samples/office-hallway-walk.mp4` |
+| Two-Person Approach (Side-by-Side) | `backend/samples/two-person-approach.mp4` |
+| Assisted Walk (Sit Down) | `backend/samples/assisted-walk-sit.mp4` |
+| Warehouse Fall Event | `backend/samples/warehouse-fall.mp4` |
 
 Good first sample:
 
@@ -22,7 +22,7 @@ Good first sample:
 Example local path:
 
 ```text
-backend/samples/test-video.mp4
+backend/samples/office-hallway-walk.mp4
 ```
 
 Video files in this folder are ignored by git so private or large files are not

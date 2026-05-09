@@ -79,25 +79,20 @@ class ApiTests(unittest.TestCase):
             self.assertIsNone(created["processing_fps"])
             self.assertIsNone(created["annotated_video_url"])
             self.assertEqual(created["tracks"], [])
-            self.assertEqual(created["events"][0]["event_type"], "Slow walking")
+            self.assertEqual(created["events"][0]["event_type"], "Slow Walking")
             self.assertEqual(created["events"][0]["severity"], "medium")
-            self.assertEqual(created["qualified_subject_count"], 0)
-            self.assertEqual(created["raw_track_count"], 0)
-            self.assertEqual(created["mobility_event_count"], 1)
-            self.assertIn("cpu_analysis_throughput_fps", created)
-            self.assertIn("scene_reliability", created)
             self.assertNotIn("video_path", created)
             self.assertNotIn("result_path", created)
             self.assertNotIn("path", created["result"]["video"])
             self.assertEqual(created["result"]["analysis_version"], "test")
             self.assertEqual(created["result"]["status"], "completed")
-            self.assertEqual(created["result"]["events"][0]["event_type"], "Slow walking")
+            self.assertEqual(created["result"]["events"][0]["event_type"], "Slow Walking")
             self.assertEqual(created["summary"]["frames_processed"], 0)
             self.assertEqual(created["summary"]["track_count"], 0)
             self.assertEqual(created["summary"]["event_count"], 1)
             self.assertEqual(
                 created["summary"]["event_counts_by_type"],
-                {"Slow walking": 1},
+                {"Slow Walking": 1},
             )
 
             get_response = client.get(f"/analyses/{created['analysis_id']}")

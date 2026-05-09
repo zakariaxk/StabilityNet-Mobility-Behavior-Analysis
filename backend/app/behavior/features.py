@@ -19,10 +19,6 @@ class BehaviorFeatures:
     recent_speed_px_s: float
     position_variance_px2: float
     is_confirmed: bool
-    recent_vertical_delta_px: float = 0.0
-    vertical_speed_px_s: float = 0.0
-    bbox_height_change_ratio: float = 0.0
-    direction_changes: int = 0
 
     def to_dict(self) -> dict[str, bool | float | int]:
         return {
@@ -34,10 +30,6 @@ class BehaviorFeatures:
             "recent_speed_px_s": self.recent_speed_px_s,
             "position_variance_px2": self.position_variance_px2,
             "is_confirmed": self.is_confirmed,
-            "recent_vertical_delta_px": self.recent_vertical_delta_px,
-            "vertical_speed_px_s": self.vertical_speed_px_s,
-            "bbox_height_change_ratio": self.bbox_height_change_ratio,
-            "direction_changes": self.direction_changes,
         }
 
 
@@ -55,10 +47,6 @@ def extract_features(history: TrackHistory, config: BehaviorConfig) -> BehaviorF
         recent_speed_px_s=_recent_speed(history.points),
         position_variance_px2=_position_variance(window_points),
         is_confirmed=history.is_confirmed,
-        recent_vertical_delta_px=_recent_vertical_delta(history.points),
-        vertical_speed_px_s=_vertical_speed(history.points),
-        bbox_height_change_ratio=_bbox_height_change_ratio(history.points),
-        direction_changes=_direction_changes(window_points),
     )
 
 
@@ -116,60 +104,6 @@ def _position_variance(points: list[TrackPoint]) -> float:
     ) / len(points)
 
 
-def _recent_vertical_delta(points: list[TrackPoint]) -> float:
-    if len(points) < 2:
-        return 0.0
-    previous = points[-2]
-    current = points[-1]
-    return current.center[1] - previous.center[1]
-
-
-def _vertical_speed(points: list[TrackPoint]) -> float:
-    if len(points) < 2:
-        return 0.0
-    previous = points[-2]
-    current = points[-1]
-    elapsed_s = max(0.0, current.timestamp_s - previous.timestamp_s)
-    if elapsed_s == 0:
-        return 0.0
-    return (current.center[1] - previous.center[1]) / elapsed_s
-
-
-def _bbox_height_change_ratio(points: list[TrackPoint]) -> float:
-    if len(points) < 2:
-        return 0.0
-    previous = points[-2]
-    current = points[-1]
-    baseline = max(1.0, previous.bbox_height)
-    return abs(current.bbox_height - previous.bbox_height) / baseline
-
-
-def _direction_changes(points: list[TrackPoint]) -> int:
-    if len(points) < 4:
-        return 0
-
-    vectors: list[tuple[float, float]] = []
-    for previous, current in zip(points, points[1:], strict=False):
-        dx = current.center[0] - previous.center[0]
-        dy = current.center[1] - previous.center[1]
-        if abs(dx) + abs(dy) < 1e-5:
-            continue
-        vectors.append((dx, dy))
-    if len(vectors) < 3:
-        return 0
-
-    changes = 0
-    for previous, current in zip(vectors, vectors[1:], strict=False):
-        prev_len = hypot(previous[0], previous[1])
-        curr_len = hypot(current[0], current[1])
-        if prev_len == 0.0 or curr_len == 0.0:
-            continue
-        dot = previous[0] * current[0] + previous[1] * current[1]
-        cosine = dot / (prev_len * curr_len)
-        if cosine < -0.2:
-            changes += 1
-    return changes
-
-
 def _distance(left: tuple[float, float], right: tuple[float, float]) -> float:
     return hypot(left[0] - right[0], left[1] - right[1])
+

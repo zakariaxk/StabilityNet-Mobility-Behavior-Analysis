@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.api.analysis_service import AnalysisService
 from app.config import AnalysisRequest
 from app.main import create_app
+from app.pipeline.annotated_video import VideoWriteError
 from app.pipeline.video_pipeline import AnalysisPipelineError
 from app.pipeline.result_writer import write_json
 from app.vision.detector import DetectorInferenceError
@@ -44,6 +45,10 @@ def pipeline_error_runner(request: AnalysisRequest) -> dict[str, object]:
 
 def inference_error_runner(request: AnalysisRequest) -> dict[str, object]:
     raise DetectorInferenceError("YOLO inference failed while processing a frame.")
+
+
+def video_write_error_runner(request: AnalysisRequest) -> dict[str, object]:
+    raise VideoWriteError("ffmpeg is required to create browser-compatible output.")
 
 
 class ApiTests(unittest.TestCase):
@@ -202,8 +207,16 @@ class ApiTests(unittest.TestCase):
             compatibility_response = client.get(f"/analyses/{created['analysis_id']}/video")
 
             self.assertEqual(output_response.status_code, 200)
+            self.assertEqual(
+                output_response.headers["content-type"].split(";")[0],
+                "video/mp4",
+            )
             self.assertEqual(output_response.content, b"annotated video bytes")
             self.assertEqual(compatibility_response.status_code, 200)
+            self.assertEqual(
+                compatibility_response.headers["content-type"].split(";")[0],
+                "video/mp4",
+            )
             self.assertEqual(compatibility_response.content, b"annotated video bytes")
 
     def test_rejects_non_mp4_uploads(self) -> None:
@@ -275,6 +288,22 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(
                 response.json()["detail"],
                 "YOLO inference failed while processing a frame.",
+            )
+
+    def test_returns_dependency_error_for_annotated_video_write_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = AnalysisService(output_dir=Path(tmpdir), runner=video_write_error_runner)
+            client = TestClient(create_app(analysis_service=service))
+
+            response = client.post(
+                "/analyses/upload",
+                files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+            )
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(
+                response.json()["detail"],
+                "ffmpeg is required to create browser-compatible output.",
             )
 
     def test_allows_local_nextjs_dev_origin(self) -> None:

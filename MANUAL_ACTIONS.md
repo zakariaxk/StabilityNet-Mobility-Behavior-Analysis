@@ -33,7 +33,7 @@ cd /Users/zakariakhan/Documents/StabilityNet/frontend
 npm install
 ```
 
-2. Install ffmpeg if needed:
+2. Install ffmpeg for browser-playable annotated MP4 output:
 
 ```bash
 ffmpeg -version
@@ -555,6 +555,37 @@ through `/api/stabilitynet`. Annotated backend URLs use:
 
 The compatibility route `/analyses/<analysis_id>/video` serves the annotated
 MP4 when it exists, then falls back to the uploaded MP4.
+
+### Verify An Annotated Output Video
+
+After a completed analysis, check the generated videos folder:
+
+```bash
+ls backend/outputs/videos
+```
+
+Run ffprobe on the final MP4:
+
+```bash
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=codec_name,pix_fmt,codec_tag_string,width,height,duration \
+  -of default=noprint_wrappers=1 \
+  backend/outputs/videos/<file>.mp4
+```
+
+Confirm these lines are present:
+
+```text
+codec_name=h264
+codec_tag_string=avc1
+pix_fmt=yuv420p
+```
+
+Open the direct backend video URL in the browser:
+
+```text
+http://127.0.0.1:8000/outputs/<file>.mp4
+```
 
 ## 17. Test A Full Hosted Demo
 

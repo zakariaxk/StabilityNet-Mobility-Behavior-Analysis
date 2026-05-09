@@ -155,8 +155,8 @@ def _check_ffmpeg(result: SmokeResult) -> None:
         result.pass_check(f"ffmpeg found: {ffmpeg}")
         return
     result.warn_check(
-        "ffmpeg is not installed. Annotated videos will use OpenCV mp4v output, "
-        "which may be less browser-compatible."
+        "ffmpeg is not installed. Annotated browser-playable MP4 output requires "
+        "ffmpeg H.264 transcoding."
     )
 
 

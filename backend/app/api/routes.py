@@ -77,7 +77,7 @@ def create_analysis(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except VideoWriteError as exc:
         logger.exception("analysis video output failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post(
@@ -110,7 +110,7 @@ def upload_analysis(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except VideoWriteError as exc:
         logger.exception("upload analysis video output failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisRecord)

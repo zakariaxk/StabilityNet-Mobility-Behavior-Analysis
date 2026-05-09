@@ -17,6 +17,13 @@ python3 -m app.cli --help
 python3 -m unittest discover -s tests
 ```
 
+Annotated browser-playable MP4 output requires ffmpeg:
+
+```bash
+ffmpeg -version
+brew install ffmpeg
+```
+
 ## Phase 1 Target
 
 ```bash
@@ -121,6 +128,37 @@ python test_video_upload.py /absolute/path/to/local-video.mp4
 
 Both upload paths return JSON with an `annotated_video_url` when annotated
 output was written. Open it by prefixing the backend host, for example:
+
+```text
+http://127.0.0.1:8000/outputs/<file>.mp4
+```
+
+## Verify Annotated Output Video
+
+Generated annotated videos are written under:
+
+```text
+backend/outputs/videos/
+```
+
+Check the final MP4 with ffprobe:
+
+```bash
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=codec_name,pix_fmt,codec_tag_string,width,height,duration \
+  -of default=noprint_wrappers=1 \
+  backend/outputs/videos/<file>.mp4
+```
+
+Confirm the output includes:
+
+```text
+codec_name=h264
+codec_tag_string=avc1
+pix_fmt=yuv420p
+```
+
+Then open the direct video URL in the browser:
 
 ```text
 http://127.0.0.1:8000/outputs/<file>.mp4

@@ -1,4 +1,4 @@
-import { proxyBackendResponse } from "@/lib/backendProxy";
+import { proxyBackendVideoResponse } from "@/lib/backendProxy";
 
 interface OutputVideoRouteContext {
   params: Promise<{
@@ -7,9 +7,9 @@ interface OutputVideoRouteContext {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: OutputVideoRouteContext
 ): Promise<Response> {
   const { filename } = await context.params;
-  return proxyBackendResponse(`/outputs/${encodeURIComponent(filename)}`);
+  return proxyBackendVideoResponse(`/outputs/${encodeURIComponent(filename)}`, request);
 }

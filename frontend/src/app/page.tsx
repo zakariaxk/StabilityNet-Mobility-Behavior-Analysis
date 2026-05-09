@@ -640,6 +640,17 @@ function AnnotatedVideo({
   videoDurationSeconds?: number;
   videoUrl: string | null;
 }) {
+  const [failedVideoUrl, setFailedVideoUrl] = useState<string | null>(null);
+  const isDevelopment = process.env.NODE_ENV !== "production";
+  const videoLoadError = videoUrl !== null && failedVideoUrl === videoUrl;
+
+  function handleVideoError() {
+    if (isDevelopment && videoUrl) {
+      console.error("Annotated video failed to load:", videoUrl);
+    }
+    setFailedVideoUrl(videoUrl);
+  }
+
   return (
     <section
       className={`panel annotated-panel${hasResult ? " annotated-panel--result" : ""}`}
@@ -650,13 +661,28 @@ function AnnotatedVideo({
         {hasResult ? <span>Primary Analysis View</span> : null}
       </div>
       <div className="video-frame">
-        {videoUrl ? (
+        {videoUrl && !videoLoadError ? (
           <video
             className="annotated-video"
             src={videoUrl}
             controls
+            onError={handleVideoError}
             preload="metadata"
           />
+        ) : videoUrl ? (
+          <div className="video-empty video-empty--error" role="alert">
+            <VideoIcon />
+            <strong>Annotated video failed to load</strong>
+            <span>
+              The backend returned a video URL, but the browser could not play
+              it.
+            </span>
+            {isDevelopment ? (
+              <a className="video-debug-link" href={videoUrl} target="_blank" rel="noreferrer">
+                Open video
+              </a>
+            ) : null}
+          </div>
         ) : (
           <div className="video-empty">
             <VideoIcon />

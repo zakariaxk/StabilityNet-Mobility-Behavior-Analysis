@@ -59,6 +59,21 @@ export async function proxyBackendResponse(
   return proxyBackendRequest(path, init);
 }
 
+export async function proxyBackendVideoResponse(
+  path: string,
+  request: Request
+): Promise<NextResponse> {
+  const headers = new Headers();
+  for (const headerName of ["range", "if-range"]) {
+    const value = request.headers.get(headerName);
+    if (value !== null) {
+      headers.set(headerName, value);
+    }
+  }
+
+  return proxyBackendRequest(path, { headers });
+}
+
 async function proxyBackendRequest(
   path: string,
   init?: RequestInit
@@ -75,17 +90,10 @@ async function proxyBackendRequest(
       cache: "no-store"
     });
     const body = await response.arrayBuffer();
-    const contentType = response.headers.get("content-type") ?? "application/json";
-
-    if (body.byteLength === 0) {
-      return new NextResponse(null, { status: response.status });
-    }
 
     return new NextResponse(body, {
       status: response.status,
-      headers: {
-        "content-type": contentType
-      }
+      headers: proxyResponseHeaders(response)
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown backend error.";
@@ -97,6 +105,32 @@ async function proxyBackendRequest(
       { status: 502 }
     );
   }
+}
+
+function proxyResponseHeaders(response: Response): Headers {
+  const headers = new Headers();
+  const passthroughHeaders = [
+    "accept-ranges",
+    "cache-control",
+    "content-length",
+    "content-range",
+    "content-type",
+    "etag",
+    "last-modified"
+  ];
+
+  for (const headerName of passthroughHeaders) {
+    const value = response.headers.get(headerName);
+    if (value !== null) {
+      headers.set(headerName, value);
+    }
+  }
+
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+
+  return headers;
 }
 
 function backendUrl(path: string): string {

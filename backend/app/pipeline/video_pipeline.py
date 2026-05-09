@@ -126,40 +126,12 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
                     analyzed_frames_count += 1
                     all_observations.extend(analysis_observations)
 
-                    for event in _track_end_events(
-                        previous_observations=previous_analysis_observations,
-                        current_observations=analysis_observations,
-                        latest_features=latest_features,
-                        frame_width=metadata.width,
-                        frame_height=metadata.height,
-                        timestamp_s=frame.timestamp_s,
-                    ):
-                        add_event(event)
-
-                    camera_motion_event = _camera_motion_uncertainty_event(
-                        previous_observations=previous_analysis_observations,
-                        current_observations=analysis_observations,
-                        frame_width=metadata.width,
-                        frame_height=metadata.height,
-                        timestamp_s=frame.timestamp_s,
-                    )
-                    if camera_motion_event is not None:
-                        add_event(camera_motion_event)
-
                     event_started_at = time.perf_counter()
                     for observation in analysis_observations:
                         history = track_store.update(observation)
                         features = extract_features(history, request.config.behavior)
                         latest_features[features.track_id] = features
                         frame_features_by_track[features.track_id] = features
-
-                        uncertainty_event = _insufficient_evidence_event(
-                            observation=observation,
-                            features=features,
-                            timestamp_s=frame.timestamp_s,
-                        )
-                        if uncertainty_event is not None:
-                            add_event(uncertainty_event)
 
                         for event in scorer.score(
                             features,
@@ -246,18 +218,8 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         config=request.config.behavior,
     )
     raw_track_count = len(tracks)
-    qualified_tracks = [track for track in tracks if track.get("qualified") is True]
-    scene_reliability = _scene_reliability(
-        tracks=tracks,
-        raw_events=events,
-        frames_processed=frames_processed,
-    )
-    display_events, suppressed_event_count = _display_events(
-        events=events,
-        tracks=tracks,
-        scene_reliability=scene_reliability,
-    )
-    event_payloads = [event.to_dict() for event in display_events]
+    merged_events = _merge_nearby_events(events)
+    event_payloads = [event.to_dict() for event in merged_events]
     raw_event_count = len(events)
     end_to_end_seconds = time.perf_counter() - started_at
     analysis_throughput_fps = (
@@ -308,11 +270,11 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         "analysis_resolution_width": request.config.detector.analysis_width,
         "annotated_output_max_width": request.config.annotated_output_max_width,
         "raw_track_count": raw_track_count,
-        "qualified_subject_count": len(qualified_tracks),
-        "tracks_count": len(qualified_tracks),
+        "qualified_subject_count": raw_track_count,
+        "tracks_count": raw_track_count,
         "confirmed_tracks_count": sum(1 for track in tracks if track.get("is_confirmed") is True),
         "raw_event_count": raw_event_count,
-        "events_suppressed_count": suppressed_event_count,
+        "events_suppressed_count": max(0, raw_event_count - len(event_payloads)),
         "mobility_event_count": len(event_payloads),
         "events_count": len(event_payloads),
         "fps": metadata.fps,
@@ -347,19 +309,19 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
             "end_to_end_processing_fps": end_to_end_throughput_fps,
             "effective_analysis_fps": effective_analysis_fps,
         },
-        "scene_reliability": scene_reliability["category"],
-        "scene_reliability_score": scene_reliability["score"],
-        "scene_reliability_reasons": scene_reliability["reasons"],
+        "scene_reliability": "Unknown",
+        "scene_reliability_score": None,
+        "scene_reliability_reasons": [],
         "annotated_video_url": annotated_video_url,
         "message": None,
         "frames": frame_summaries,
         "tracks": tracks,
-        "qualified_tracks": qualified_tracks,
+        "qualified_tracks": tracks,
         "events": event_payloads,
         "debug": {
             "raw_track_count": raw_track_count,
             "raw_event_count": raw_event_count,
-            "qualified_subject_count": len(qualified_tracks),
+            "qualified_subject_count": raw_track_count,
             "analysis_frame_stride": analysis_frame_stride,
             "analysis_stride_mode": analysis_stride_mode,
             "analysis_resolution_width": request.config.detector.analysis_width,
@@ -373,7 +335,7 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
             "video_path": str(request.video_path),
             "frames_processed": frames_processed,
             "raw_track_count": raw_track_count,
-            "qualified_subject_count": len(qualified_tracks),
+            "qualified_subject_count": raw_track_count,
             "events_count": len(event_payloads),
         },
     )
@@ -502,6 +464,7 @@ def _apply_track_qualification(
     min_duration_s = float(getattr(config, "min_track_duration_s", 1.0))
     min_frames = int(getattr(config, "min_track_frames", 10))
     min_confidence = float(getattr(config, "min_event_confidence", 0.5))
+    boundary_uncertain = boundary_ratio >= 0.9
 
     suppression_reasons: list[str] = []
     if not is_confirmed:
@@ -512,7 +475,6 @@ def _apply_track_qualification(
         suppression_reasons.append("too_few_observations")
     if confidence < min_confidence:
         suppression_reasons.append("low_confidence")
-    boundary_uncertain = boundary_ratio >= 0.85
     if boundary_uncertain and duration_s < min_duration_s * 2.0:
         suppression_reasons.append("mostly_near_frame_boundary")
 
@@ -523,24 +485,27 @@ def _apply_track_qualification(
     summary["frame_count"] = observations_count
     summary["confidence"] = confidence
     summary["boundary_observation_ratio"] = boundary_ratio
-    summary["motion_state"] = "review" if boundary_uncertain and not suppression_reasons else motion_state
-    if suppression_reasons:
-        summary["status"] = "Insufficient Evidence"
-        summary["risk_level"] = "unknown"
-    elif boundary_uncertain:
-        summary["status"] = "Review Needed"
-        summary["risk_level"] = "review"
+    summary["motion_state"] = motion_state
+    if motion_state == "review":
+        summary["status"] = "Tracking Instability"
+        summary["risk_level"] = "review_needed"
+    elif motion_state == "stationary":
+        summary["status"] = "Stationary"
+        summary["risk_level"] = "normal"
+    elif motion_state == "slow walking":
+        summary["status"] = "Slow walking"
+        summary["risk_level"] = "normal"
     else:
-        summary["status"] = "Stable"
+        summary["status"] = "Walking"
         summary["risk_level"] = "normal"
     summary["qualified"] = not suppression_reasons
-    summary["eligible"] = not suppression_reasons
+    summary["eligible"] = summary["qualified"]
     summary["suppression_reason"] = ", ".join(suppression_reasons) or None
 
 
 def _track_motion_state(feature_record: dict[str, object]) -> str:
     variance = _float_value(feature_record.get("position_variance_px2"))
-    if variance is not None and variance >= 1125.0:
+    if variance is not None and variance >= 2200.0:
         return "review"
     dwell_time = _float_value(feature_record.get("dwell_time_s"))
     if dwell_time is not None and dwell_time >= 8.0:

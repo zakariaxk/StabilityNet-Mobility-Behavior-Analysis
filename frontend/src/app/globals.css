@@ -825,11 +825,17 @@ svg {
 .metric-card strong {
   display: block;
   margin-top: 5px;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
   color: var(--primary-dark);
   font-size: 21px;
   font-weight: 800;
   line-height: 1.05;
+}
+
+.metric-card--status .metric-value {
+  font-size: 19px;
 }
 
 .results-grid {

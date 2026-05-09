@@ -29,8 +29,8 @@ class EventScorer:
         near_frame_boundary = _near_frame_boundary(observation, frame_size)
         observation_confidence = observation.confidence if observation is not None else 1.0
         low_visual_evidence = bool(
-            observation_confidence < self.config.min_event_confidence
-            or features.observations < self.config.min_track_frames
+            observation_confidence < self.config.min_event_confidence * 0.8
+            or features.observations < max(4, self.config.min_track_frames // 2)
         )
         strong_risk = _strong_mobility_risk(features, self.config)
         events: list[BehaviorEvent] = []
@@ -71,16 +71,17 @@ class EventScorer:
                 )
             )
 
-        anomaly_threshold = self.config.unstable_variance_threshold_px2 * 1.25
-        if features.position_variance_px2 >= anomaly_threshold:
-            if near_frame_boundary or low_visual_evidence:
-                return events
+        strong_risk_threshold = self.config.unstable_variance_threshold_px2 * 1.25
+        review_threshold = self.config.unstable_variance_threshold_px2 * 1.7
+        should_emit_high = strong_risk and features.position_variance_px2 >= strong_risk_threshold
+        should_emit_review = features.position_variance_px2 >= review_threshold
 
+        if should_emit_high or should_emit_review:
             score = _ratio(
                 features.position_variance_px2,
-                anomaly_threshold,
+                strong_risk_threshold if should_emit_high else review_threshold,
             )
-            if strong_risk:
+            if should_emit_high:
                 score = max(score, 0.8)
                 event_type = (
                     "Fall-like motion event"
@@ -96,6 +97,12 @@ class EventScorer:
                 severity = "review_needed"
                 reason = "Trajectory irregularity detected; review needed."
                 display_priority = 35
+                if near_frame_boundary or low_visual_evidence:
+                    score = min(score, 0.55)
+                    reason = (
+                        "Trajectory irregularity detected near frame boundary or with"
+                        " weaker visual evidence; review needed."
+                    )
             events.append(
                 self._event(
                     features,

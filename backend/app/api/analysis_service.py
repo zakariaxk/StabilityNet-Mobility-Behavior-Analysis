@@ -283,6 +283,7 @@ def _summarize_result(result: dict[str, object]) -> dict[str, object]:
     tracks = _list_value(result.get("tracks"))
     events = _list_value(result.get("events"))
     frames_processed = result.get("frames_processed", 0)
+    raw_track_count = _int_value(result.get("raw_track_count"), default=len(tracks))
     qualified_subject_count = _int_value(
         result.get("qualified_subject_count"),
         default=sum(1 for track in tracks if isinstance(track, dict) and track.get("qualified") is True),
@@ -339,10 +340,10 @@ def _summarize_result(result: dict[str, object]) -> dict[str, object]:
             default=0,
         ),
         "analyzed_frames_count": _int_value(result.get("analyzed_frames_count"), default=0),
-        "raw_track_count": _int_value(result.get("raw_track_count"), default=len(tracks)),
+        "raw_track_count": raw_track_count,
         "qualified_subject_count": qualified_subject_count,
-        "track_count": qualified_subject_count,
-        "tracks_count": qualified_subject_count,
+        "track_count": raw_track_count,
+        "tracks_count": raw_track_count,
         "confirmed_track_count": _confirmed_track_count(tracks),
         "raw_event_count": _int_value(result.get("raw_event_count"), default=len(events)),
         "mobility_event_count": _int_value(result.get("mobility_event_count"), default=len(events)),
@@ -456,7 +457,7 @@ def _normalize_result(result: dict[str, object]) -> dict[str, object]:
     payload["status"] = _string_value(payload.get("status")) or "completed"
     payload["frames_processed"] = frames_processed
     payload["frames_analyzed"] = frames_analyzed
-    payload["tracks_count"] = _int_value(payload.get("tracks_count"), default=qualified_subject_count)
+    payload["tracks_count"] = _int_value(payload.get("tracks_count"), default=raw_track_count)
     payload["events_count"] = _int_value(payload.get("events_count"), default=mobility_event_count)
     payload["fps"] = fps
     payload["source_fps"] = _finite_number(payload.get("source_fps"), source_video_fps)

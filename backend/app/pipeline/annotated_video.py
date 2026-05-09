@@ -649,10 +649,10 @@ def _risk_tone(
         frame_width=frame_size[0],
         frame_height=frame_size[1],
     )
-    if near_boundary and observation.confidence < 0.55:
+    if near_boundary and observation.confidence < 0.38:
         rank = max(rank, _status_rank("review_needed"))
 
-    if observation.confidence < 0.45 or not observation.is_confirmed:
+    if observation.confidence < 0.30 and not observation.is_confirmed:
         rank = max(rank, _status_rank("insufficient_evidence"))
 
     if features is None:
@@ -665,7 +665,7 @@ def _risk_tone(
     )
     if fall_like:
         rank = max(rank, _status_rank("high"))
-    elif features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25:
+    elif features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.7:
         rank = max(rank, _status_rank("review_needed"))
 
     if features.dwell_time_s >= config.dwell_time_threshold_s * 1.25:
@@ -673,9 +673,7 @@ def _risk_tone(
     elif features.dwell_time_s >= config.dwell_time_threshold_s:
         rank = max(rank, _status_rank("review_needed"))
 
-    if features.mean_speed_px_s <= config.slow_speed_threshold_px_s:
-        rank = max(rank, _status_rank("review_needed"))
-    if features.observations < 5:
+    if features.observations < 3 and observation.confidence < 0.45:
         rank = max(rank, _status_rank("insufficient_evidence"))
 
     return _rank_to_status(rank)
@@ -690,7 +688,7 @@ def _motion_state(
         return "acquiring"
     if features is None:
         return "walking"
-    if features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25:
+    if features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.7:
         return "review"
     if features.dwell_time_s >= config.dwell_time_threshold_s:
         return "stopped"
@@ -743,11 +741,11 @@ def _label_text_color(risk_tone: str) -> tuple[int, int, int]:
 
 def _status_label(status: str) -> str:
     if status == "high":
-        return "Fall-like Motion"
+        return "High Mobility Risk Indicator"
     if status == "medium":
-        return "Review Needed"
+        return "Tracking Instability"
     if status == "review_needed":
-        return "Review Needed"
+        return "Tracking Instability"
     if status == "insufficient_evidence":
         return "Insufficient Evidence"
     return "Stable"

@@ -139,12 +139,17 @@ export default function StabilityNetPage() {
       analysis?.result?.frames_processed
   );
   const trackCount = numberOrZero(
-    analysis?.qualified_subject_count ??
-      readNumber(analysis?.summary, "qualified_subject_count") ??
-      readNumber(analysis?.result, "qualified_subject_count") ??
-      analysis?.tracks_count ??
+    analysis?.tracks_count ??
       readNumber(analysis?.summary, "tracks_count") ??
       readNumber(analysis?.summary, "track_count") ??
+      readNumber(analysis?.result, "tracks_count") ??
+      readNumber(analysis?.result, "track_count") ??
+      analysis?.raw_track_count ??
+      readNumber(analysis?.summary, "raw_track_count") ??
+      readNumber(analysis?.result, "raw_track_count") ??
+      analysis?.qualified_subject_count ??
+      readNumber(analysis?.summary, "qualified_subject_count") ??
+      readNumber(analysis?.result, "qualified_subject_count") ??
       trackRows.length
   );
   const eventCount = numberOrZero(
@@ -671,11 +676,11 @@ function MetricCard({
   value: string;
 }) {
   return (
-    <div className="metric-card">
+    <div className={`metric-card${label === "Status" ? " metric-card--status" : ""}`}>
       <span className="metric-icon">{icon}</span>
       <div>
         <span>{label}</span>
-        <strong>{value}</strong>
+        <strong className="metric-value">{value}</strong>
       </div>
     </div>
   );
@@ -1040,20 +1045,6 @@ function analysisEvents(analysis: AnalysisRecord | null): BehaviorEvent[] {
 function buildSummaryMetrics(analysis: AnalysisRecord | null): MetricItem[] {
   return [
     {
-      icon: <ShieldIcon />,
-      label: "Scene Reliability",
-      value:
-        readAnalysisText(analysis, ["scene_reliability"]) ??
-        "Unavailable"
-    },
-    {
-      icon: <FilmIcon />,
-      label: "Analyzed Frames",
-      value: formatMetricNumber(
-        readAnalysisMetric(analysis, ["frames_analyzed", "analyzed_frames_count"])
-      )
-    },
-    {
       icon: <GaugeIcon />,
       label: "Source Video FPS",
       value: formatMetricNumber(
@@ -1062,12 +1053,30 @@ function buildSummaryMetrics(analysis: AnalysisRecord | null): MetricItem[] {
     },
     {
       icon: <GaugeIcon />,
-      label: "CPU Analysis FPS",
+      label: "CPU Analysis Throughput",
       value: formatMetricNumber(
         readAnalysisMetric(analysis, [
           "cpu_analysis_throughput_fps",
           "analysis_throughput_fps"
         ])
+      )
+    },
+    {
+      icon: <GaugeIcon />,
+      label: "End-to-End Processing FPS",
+      value: formatMetricNumber(
+        readAnalysisMetric(analysis, [
+          "end_to_end_processing_fps",
+          "end_to_end_throughput_fps",
+          "processing_fps"
+        ])
+      )
+    },
+    {
+      icon: <GaugeIcon />,
+      label: "Playback FPS",
+      value: formatMetricNumber(
+        readAnalysisMetric(analysis, ["playback_fps", "source_video_fps", "fps"])
       )
     }
   ];
@@ -1091,34 +1100,6 @@ function readAnalysisMetric(
   for (const source of sources) {
     for (const key of keys) {
       const value = readNumber(source, key);
-      if (value !== undefined) {
-        return value;
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function readAnalysisText(
-  analysis: AnalysisRecord | null,
-  keys: string[]
-): string | undefined {
-  if (!analysis) {
-    return undefined;
-  }
-
-  const sources = [
-    analysis.summary,
-    analysis.result,
-    readRecord(analysis.summary, "metrics"),
-    readRecord(analysis.result, "metrics"),
-    readRecord(analysis.result, "summary")
-  ];
-
-  for (const source of sources) {
-    for (const key of keys) {
-      const value = readString(source, key);
       if (value !== undefined) {
         return value;
       }

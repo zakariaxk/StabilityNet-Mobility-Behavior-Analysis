@@ -57,5 +57,18 @@ POST /analyses with local video path
 
 ## Event Semantics
 
-Phase 1 events are heuristic indicators based on configured thresholds. They are
-not clinical diagnoses and should be reviewed as mobility-pattern signals.
+Events are heuristic mobility-pattern indicators based on configured thresholds.
+They are not clinical diagnoses and should be reviewed in context.
+
+## Metric Semantics
+
+- `source_video_fps` / `source_fps`: native FPS of the uploaded/sample MP4.
+- `effective_analysis_fps`: sampled analysis cadence when high-FPS inputs use frame stride.
+- `cpu_analysis_throughput_fps`: CPU throughput across decode, detection, tracking, event scoring, and annotation.
+- `end_to_end_processing_fps` / `processing_fps`: full pipeline throughput including H.264/yuv420p output writing.
+- `raw_track_count`: internal tracker IDs before quality gates.
+- `qualified_subject_count`: stable tracks eligible for UI subject summaries.
+- `scene_reliability`: high, medium, or low reliability based on crowding, fragmentation, and camera-motion uncertainty.
+- `playback_fps`: annotated output playback timing.
+
+This separation prevents overstating model inference speed in demos or resume bullets.

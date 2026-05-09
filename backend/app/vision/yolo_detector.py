@@ -21,6 +21,7 @@ from app.config import (
     is_local_detector_model_reference,
     resolve_detector_model_reference,
 )
+from app.pipeline.frame_reader import _require_cv2
 from app.schemas.detection import BoundingBox, Detection
 from app.vision.detector import DetectorDependencyError, DetectorInferenceError
 
@@ -67,9 +68,13 @@ class YOLOPersonDetector:
         )
 
     def detect(self, frame: Any) -> list[Detection]:
+        frame_for_inference, scale_x, scale_y = _prepare_analysis_frame(
+            frame,
+            target_width=self.config.analysis_width,
+        )
         try:
             results = self.model.predict(
-                frame,
+                frame_for_inference,
                 conf=self.config.confidence_threshold,
                 classes=[self.config.person_class_id],
                 device=self.device,
@@ -100,10 +105,10 @@ class YOLOPersonDetector:
             detections.append(
                 Detection(
                     bbox=BoundingBox(
-                        x1=float(xyxy[0]),
-                        y1=float(xyxy[1]),
-                        x2=float(xyxy[2]),
-                        y2=float(xyxy[3]),
+                        x1=float(xyxy[0]) * scale_x,
+                        y1=float(xyxy[1]) * scale_y,
+                        x2=float(xyxy[2]) * scale_x,
+                        y2=float(xyxy[3]) * scale_y,
                     ),
                     confidence=confidence,
                     class_id=class_id,
@@ -140,6 +145,32 @@ def _tensor_list(value: Any) -> list[float]:
     if hasattr(value, "tolist"):
         return [float(item) for item in value.tolist()]
     return [float(item) for item in value]
+
+
+def _prepare_analysis_frame(
+    frame: Any,
+    *,
+    target_width: int | None,
+) -> tuple[Any, float, float]:
+    shape = getattr(frame, "shape", None)
+    if (
+        shape is None
+        or not isinstance(shape, tuple)
+        or len(shape) < 2
+        or target_width is None
+        or target_width <= 0
+    ):
+        return frame, 1.0, 1.0
+
+    original_height = int(shape[0])
+    original_width = int(shape[1])
+    if original_width <= target_width or original_height <= 0:
+        return frame, 1.0, 1.0
+
+    resized_height = max(2, int(round(original_height * (target_width / original_width))))
+    cv = _require_cv2()
+    resized = cv.resize(frame, (target_width, resized_height), interpolation=cv.INTER_AREA)
+    return resized, original_width / target_width, original_height / resized_height
 
 
 def verify_yolo_detector(

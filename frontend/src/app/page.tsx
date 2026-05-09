@@ -3,6 +3,7 @@
 import type {
   ChangeEvent,
   DragEvent,
+  KeyboardEvent,
   ReactNode,
   SVGProps
 } from "react";
@@ -35,6 +36,8 @@ const PROCESSING_STAGES = [
   "Preparing annotated output..."
 ] as const;
 
+const MAX_VISIBLE_EVENTS = 12;
+
 type HealthState =
   | { state: "checking"; label: "Checking" }
   | { state: "ok"; label: "Online" }
@@ -53,13 +56,19 @@ type TrackRow = {
   frames: number;
   averageConfidence?: number;
   pathStability?: number;
+  eventCount: number;
+  motionSummary: string;
+  riskTone: SeverityTone;
   points: TrackPoint[];
 };
+
+type SeverityTone = "normal" | "review" | "high" | "unknown";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
 export default function StabilityNetPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [selectedSampleId, setSelectedSampleId] = useState<string | null>(
     SAMPLE_VIDEOS[0].id
   );
@@ -74,6 +83,8 @@ export default function StabilityNetPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [processingStageIndex, setProcessingStageIndex] = useState(0);
+  const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
+  const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
 
   useEffect(() => {
     let isCurrent = true;
@@ -120,9 +131,10 @@ export default function StabilityNetPage() {
   );
   const tracks = useMemo(() => analysisTracks(analysis), [analysis]);
   const events = useMemo(() => analysisEvents(analysis), [analysis]);
+  const visibleEvents = useMemo(() => visibleTimelineEvents(events), [events]);
   const trackRows = useMemo(
-    () => buildTrackRows(tracks, analysis?.result?.frames),
-    [analysis?.result?.frames, tracks]
+    () => buildTrackRows(tracks, analysis?.result?.frames, events),
+    [analysis?.result?.frames, events, tracks]
   );
   const annotatedVideoUrl = analysis ? analysisVideoUrl(analysis) : null;
   const hasAnalysisResult = analysis !== null;
@@ -133,26 +145,68 @@ export default function StabilityNetPage() {
       analysis?.result?.frames_processed
   );
   const trackCount = numberOrZero(
-    analysis?.tracks_count ??
+    analysis?.qualified_subject_count ??
+      readNumber(analysis?.summary, "qualified_subject_count") ??
+      readNumber(analysis?.result, "qualified_subject_count") ??
+      analysis?.tracks_count ??
       readNumber(analysis?.summary, "tracks_count") ??
       readNumber(analysis?.summary, "track_count") ??
       trackRows.length
   );
   const eventCount = numberOrZero(
-    analysis?.events_count ??
+    analysis?.mobility_event_count ??
+      readNumber(analysis?.summary, "mobility_event_count") ??
+      readNumber(analysis?.result, "mobility_event_count") ??
+      analysis?.events_count ??
       readNumber(analysis?.summary, "events_count") ??
       readNumber(analysis?.summary, "event_count") ??
       events.length
   );
-  const processingFps = formatOptionalDecimal(
-    analysis?.processing_fps ??
-      readNumber(analysis?.summary, "processing_fps") ??
-      readNumber(analysis?.result, "processing_fps")
+  const selectedTrack = useMemo(
+    () => trackRows.find((track) => track.id === selectedTrackId) ?? null,
+    [selectedTrackId, trackRows]
+  );
+  const selectedEvent = useMemo(
+    () =>
+      events.find((event, index) => eventCardKey(event, index) === selectedEventKey) ??
+      null,
+    [events, selectedEventKey]
+  );
+  const throughputMetrics = useMemo(
+    () => buildThroughputMetrics(analysis),
+    [analysis]
   );
   const optionalMetrics = useMemo(
     () => buildOptionalMetrics(analysis),
     [analysis]
   );
+
+  function seekToTimestamp(timestamp: number | undefined): void {
+    if (timestamp === undefined) {
+      return;
+    }
+    const player = videoRef.current;
+    if (!player) {
+      return;
+    }
+    player.currentTime = Math.max(0, timestamp);
+    void player.play().catch(() => {
+      // Keep seeking behavior graceful when autoplay is blocked.
+    });
+  }
+
+  function handleTrackSelect(trackId: number): void {
+    setSelectedTrackId(trackId);
+  }
+
+  function handleEventSelect(event: BehaviorEvent, index: number): void {
+    setSelectedEventKey(eventCardKey(event, index));
+    const trackId = readNumber(event, "track_id");
+    if (trackId !== undefined) {
+      setSelectedTrackId(trackId);
+    }
+    seekToTimestamp(readNumber(event, "timestamp_s"));
+  }
 
   async function handleAnalyze() {
     if (!videoFile && !selectedSample) {
@@ -168,6 +222,8 @@ export default function StabilityNetPage() {
       const record = videoFile
         ? await uploadAnalysis(videoFile)
         : await createAnalysis({ video_path: selectedSample!.videoPath });
+      setSelectedTrackId(null);
+      setSelectedEventKey(null);
       setAnalysis(record);
       if (selectedSample) {
         setUnavailableSampleIds((sampleIds) =>
@@ -212,6 +268,8 @@ export default function StabilityNetPage() {
 
     setError(null);
     setAnalysis(null);
+    setSelectedTrackId(null);
+    setSelectedEventKey(null);
     setSelectedSampleId(null);
     setVideoFile(file);
   }
@@ -225,6 +283,8 @@ export default function StabilityNetPage() {
   function handleSampleSelect(sampleId: string) {
     setError(null);
     setAnalysis(null);
+    setSelectedTrackId(null);
+    setSelectedEventKey(null);
     setSelectedSampleId(sampleId);
     setVideoFile(null);
     if (fileInputRef.current) {
@@ -292,19 +352,33 @@ export default function StabilityNetPage() {
             trackCount={trackCount}
             eventCount={eventCount}
             optionalMetrics={optionalMetrics}
-            processingFps={processingFps}
+            throughputMetrics={throughputMetrics}
           />
 
           <div className={`results-grid${hasAnalysisResult ? " results-grid--analyzed" : ""}`}>
             <AnnotatedVideo
-              events={events}
+              events={visibleEvents}
               hasResult={hasAnalysisResult}
+              selectedEventKey={selectedEventKey}
+              selectedTrack={selectedTrack}
+              selectedEvent={selectedEvent}
+              onSelectEvent={handleEventSelect}
               videoDurationSeconds={videoDurationSeconds}
+              videoRef={videoRef}
               videoUrl={annotatedVideoUrl}
             />
             <div className="results-side">
-              <TracksTable tracks={trackRows} />
-              <EventsTable events={events} />
+              <TracksTable
+                onSelectTrack={handleTrackSelect}
+                selectedTrackId={selectedTrackId}
+                tracks={trackRows}
+              />
+              <EventsTable
+                events={visibleEvents}
+                totalEventsCount={events.length}
+                onSelectEvent={handleEventSelect}
+                selectedEventKey={selectedEventKey}
+              />
             </div>
           </div>
 
@@ -322,7 +396,7 @@ function Sidebar() {
         <WalkingIcon className="brand-icon" />
         <div>
           <strong>StabilityNet</strong>
-          <p>Video-based mobility and fall-risk analysis</p>
+          <p>Uploaded-video mobility review analysis</p>
         </div>
       </div>
 
@@ -337,7 +411,7 @@ function Sidebar() {
         <strong>Research Prototype</strong>
         <p>
           This system analyzes uploaded videos to extract mobility patterns and
-          identify potential fall-risk indicators.
+          surface motion events that require review.
         </p>
         <span>Not a medical device.</span>
       </div>
@@ -370,11 +444,11 @@ function Header({ health }: { health: HealthState }) {
       <div className="hero-copy">
         <h1>StabilityNet</h1>
         <p className="hero-subtitle">
-          Video-based mobility and fall-risk analysis
+          Uploaded-video mobility review analysis
         </p>
         <p className="hero-intro">
           Upload a video or try a sample to analyze human motion, track
-          individuals, and detect mobility events that may indicate fall risk.
+          individuals, and flag motion patterns for conservative review.
         </p>
       </div>
       <div className={`online-pill online-pill--${health.state}`}>
@@ -566,14 +640,14 @@ function SummaryCards({
   trackCount,
   eventCount,
   optionalMetrics,
-  processingFps
+  throughputMetrics
 }: {
   status: string;
   framesProcessed: number;
   trackCount: number;
   eventCount: number;
   optionalMetrics: MetricItem[];
-  processingFps: string;
+  throughputMetrics: MetricItem[];
 }) {
   return (
     <section className="panel summary-panel" id="results" aria-labelledby="summary-title">
@@ -603,7 +677,14 @@ function SummaryCards({
             value={metric.value}
           />
         ))}
-        <MetricCard icon={<GaugeIcon />} label="Processing FPS" value={processingFps} />
+        {throughputMetrics.map((metric) => (
+          <MetricCard
+            key={metric.label}
+            icon={metric.icon}
+            label={metric.label}
+            value={metric.value}
+          />
+        ))}
       </div>
     </section>
   );
@@ -632,12 +713,22 @@ function MetricCard({
 function AnnotatedVideo({
   events,
   hasResult,
+  onSelectEvent,
+  selectedEvent,
+  selectedEventKey,
+  selectedTrack,
   videoDurationSeconds,
+  videoRef,
   videoUrl
 }: {
   events: BehaviorEvent[];
   hasResult: boolean;
+  onSelectEvent: (event: BehaviorEvent, index: number) => void;
+  selectedEvent: BehaviorEvent | null;
+  selectedEventKey: string | null;
+  selectedTrack: TrackRow | null;
   videoDurationSeconds?: number;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   videoUrl: string | null;
 }) {
   const [failedVideoUrl, setFailedVideoUrl] = useState<string | null>(null);
@@ -658,12 +749,21 @@ function AnnotatedVideo({
     >
       <div className="artifact-heading">
         <h2 id="video-title">4. Annotated Output</h2>
-        {hasResult ? <span>Primary Analysis View</span> : null}
+        {hasResult ? (
+          <span>
+            {selectedTrack
+              ? `Subject ${selectedTrack.id} selected`
+              : selectedEvent
+                ? "Event selected"
+                : "Primary Analysis View"}
+          </span>
+        ) : null}
       </div>
       <div className="video-frame">
         {videoUrl && !videoLoadError ? (
           <video
             className="annotated-video"
+            ref={videoRef}
             src={videoUrl}
             controls
             onError={handleVideoError}
@@ -691,25 +791,48 @@ function AnnotatedVideo({
           </div>
         )}
       </div>
-      <EventMarkers events={events} videoDurationSeconds={videoDurationSeconds} />
+      <EventMarkers
+        events={events}
+        onSelectEvent={onSelectEvent}
+        selectedEventKey={selectedEventKey}
+        videoDurationSeconds={videoDurationSeconds}
+      />
+      {selectedTrack || selectedEvent ? (
+        <div className="video-selection-hint" aria-live="polite">
+          {selectedTrack
+            ? `Selected Subject ${selectedTrack.id} • Motion: ${selectedTrack.motionSummary} • Status: ${severityLabel(selectedTrack.riskTone)}`
+            : `Selected event at ${formatOptionalDecimal(readNumber(selectedEvent, "timestamp_s"))}s`}
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function EventMarkers({
   events,
+  onSelectEvent,
+  selectedEventKey,
   videoDurationSeconds
 }: {
   events: BehaviorEvent[];
+  onSelectEvent: (event: BehaviorEvent, index: number) => void;
+  selectedEventKey: string | null;
   videoDurationSeconds?: number;
 }) {
   const timedEvents = events
-    .map((event) => ({
+    .map((event, index) => ({
       event,
+      index,
+      key: eventCardKey(event, index),
       timestamp: readNumber(event, "timestamp_s")
     }))
     .filter(
-      (entry): entry is { event: BehaviorEvent; timestamp: number } =>
+      (entry): entry is {
+        event: BehaviorEvent;
+        index: number;
+        key: string;
+        timestamp: number;
+      } =>
         entry.timestamp !== undefined
     );
 
@@ -723,14 +846,20 @@ function EventMarkers({
   return (
     <div className="event-marker-strip" aria-label="Video event markers">
       <div className="event-marker-track">
-        {timedEvents.map(({ event, timestamp }, index) => {
+        {timedEvents.map(({ event, index, key, timestamp }) => {
           const severityTone = severityClass(readString(event, "severity") ?? "low");
           const left = Math.min(100, Math.max(0, (timestamp / duration) * 100));
+          const isSelected = selectedEventKey === key;
 
           return (
-            <span
-              className={`event-marker event-marker--${severityTone}`}
-              key={event.event_id ?? `${event.track_id}-${event.event_type}-${index}`}
+            <button
+              aria-label={`Seek to ${formatOptionalDecimal(timestamp)} seconds`}
+              className={`event-marker event-marker--${severityTone}${
+                isSelected ? " event-marker--selected" : ""
+              }`}
+              key={key}
+              onClick={() => onSelectEvent(event, index)}
+              type="button"
               style={{ left: `${left}%` }}
               title={`${formatOptionalDecimal(timestamp)}s: ${humanizeEventType(
                 readString(event, "event_type") ?? "event"
@@ -744,7 +873,15 @@ function EventMarkers({
   );
 }
 
-function TracksTable({ tracks }: { tracks: TrackRow[] }) {
+function TracksTable({
+  tracks,
+  selectedTrackId,
+  onSelectTrack
+}: {
+  tracks: TrackRow[];
+  selectedTrackId: number | null;
+  onSelectTrack: (trackId: number) => void;
+}) {
   return (
     <section className="panel table-panel" aria-labelledby="tracks-title">
       <div className="table-heading">
@@ -753,28 +890,61 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
       </div>
       {tracks.length > 0 ? (
         <div className="subject-list">
-          {tracks.map((track, index) => (
-            <article className="subject-row" key={track.id}>
+          {tracks.map((track, index) => {
+            const isSelected = selectedTrackId === track.id;
+            return (
+              <article
+                aria-pressed={isSelected}
+                className={`subject-row subject-row--interactive${
+                  isSelected ? " subject-row--selected" : ""
+                }`}
+                key={track.id}
+                onClick={() => onSelectTrack(track.id)}
+                onKeyDown={(event) => activateOnKey(event, () => onSelectTrack(track.id))}
+                role="button"
+                tabIndex={0}
+              >
               <div className="subject-row-main">
                 <span className={`track-id track-id--${index % 4}`}>{track.id}</span>
                 <div>
                   <strong>Subject {track.id}</strong>
-                  <span>{track.frames.toLocaleString()} frames</span>
+                  <span>
+                    {track.frames.toLocaleString()} frames • {track.motionSummary}
+                  </span>
                 </div>
               </div>
-              <dl className="subject-stats">
-                <div>
-                  <dt>Duration</dt>
-                  <dd>{formatOptionalDecimal(track.durationSeconds)}s</dd>
-                </div>
-                <div>
-                  <dt>Confidence</dt>
-                  <dd>{formatOptionalDecimal(track.averageConfidence)}</dd>
-                </div>
-              </dl>
+              {isSelected ? (
+                <dl className="subject-stats">
+                  <div>
+                    <dt>Duration</dt>
+                    <dd>{formatOptionalDecimal(track.durationSeconds)}s</dd>
+                  </div>
+                  <div>
+                    <dt>Confidence</dt>
+                    <dd>{formatOptionalDecimal(track.averageConfidence)}</dd>
+                  </div>
+                  <div>
+                    <dt>Frame Count</dt>
+                    <dd>{track.frames.toLocaleString()}</dd>
+                  </div>
+                  <div>
+                    <dt>Events</dt>
+                    <dd>{track.eventCount.toLocaleString()}</dd>
+                  </div>
+                  <div>
+                    <dt>Motion Summary</dt>
+                    <dd>{track.motionSummary}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{severityLabel(track.riskTone)}</dd>
+                  </div>
+                </dl>
+              ) : null}
               <TrajectoryCell track={track} tone={index % 4} />
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <EmptyState
@@ -786,17 +956,32 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
   );
 }
 
-function EventsTable({ events }: { events: BehaviorEvent[] }) {
+function EventsTable({
+  events,
+  totalEventsCount,
+  selectedEventKey,
+  onSelectEvent
+}: {
+  events: BehaviorEvent[];
+  totalEventsCount: number;
+  selectedEventKey: string | null;
+  onSelectEvent: (event: BehaviorEvent, index: number) => void;
+}) {
   return (
     <section className="panel table-panel" aria-labelledby="events-title">
       <div className="table-heading">
         <h2 id="events-title">Events Timeline</h2>
-        <span>Total: {events.length.toLocaleString()}</span>
+        <span>
+          {events.length < totalEventsCount
+            ? `Showing ${events.length.toLocaleString()} of ${totalEventsCount.toLocaleString()}`
+            : `Total: ${events.length.toLocaleString()}`}
+        </span>
       </div>
       {events.length > 0 ? (
         <div className="event-list">
           {events.map((event, index) => {
             const timestamp = formatOptionalDecimal(readNumber(event, "timestamp_s"));
+            const trackId = readNumber(event, "track_id");
             const eventType = humanizeEventType(
               readString(event, "event_type") ?? "event"
             );
@@ -804,11 +989,22 @@ function EventsTable({ events }: { events: BehaviorEvent[] }) {
               readString(event, "reason") ??
               readString(event, "description") ??
               "Mobility pattern observed";
+            const key = eventCardKey(event, index);
+            const isSelected = selectedEventKey === key;
 
             return (
               <article
-                className="event-row"
-                key={event.event_id ?? `${event.track_id}-${event.event_type}-${index}`}
+                aria-pressed={isSelected}
+                className={`event-row event-row--interactive${
+                  isSelected ? " event-row--selected" : ""
+                }`}
+                key={key}
+                onClick={() => onSelectEvent(event, index)}
+                onKeyDown={(keyboardEvent) =>
+                  activateOnKey(keyboardEvent, () => onSelectEvent(event, index))
+                }
+                role="button"
+                tabIndex={0}
               >
                 <div className="event-row-top">
                   <strong>{eventType}</strong>
@@ -816,16 +1012,26 @@ function EventsTable({ events }: { events: BehaviorEvent[] }) {
                 </div>
                 <p>{description}</p>
                 <span>
-                  {timestamp}s • Track {event.track_id}
+                  {timestamp}s • {trackId !== undefined ? `Track ${trackId}` : "Track unlinked"}
                 </span>
+                {isSelected ? (
+                  <div className="event-expanded">
+                    <span>Seeked to {timestamp}s</span>
+                    <span>
+                      {trackId !== undefined
+                        ? `Linked subject: ${trackId}`
+                        : "No linked subject for this event"}
+                    </span>
+                  </div>
+                ) : null}
               </article>
             );
           })}
         </div>
       ) : (
         <EmptyState
-          title="No events detected"
-          body="Run an analysis to see events."
+          title="No high-confidence events"
+          body="No strong mobility events were detected in this analysis."
         />
       )}
     </section>
@@ -836,7 +1042,7 @@ function SeverityBadge({ severity }: { severity: string }) {
   const severityTone = severityClass(severity);
   return (
     <span className={`severity severity--${severityTone}`}>
-      {capitalize(severityTone)}
+      {severityLabel(severityTone)}
     </span>
   );
 }
@@ -897,12 +1103,108 @@ function analysisEvents(analysis: AnalysisRecord | null): BehaviorEvent[] {
     : safeArray(analysis?.result?.events);
 }
 
+function visibleTimelineEvents(events: BehaviorEvent[]): BehaviorEvent[] {
+  const prioritized = [...events].sort((left, right) => {
+    const leftPriority = readNumber(left, "display_priority") ?? severityPriority(left);
+    const rightPriority = readNumber(right, "display_priority") ?? severityPriority(right);
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+    return (readNumber(left, "timestamp_s") ?? 0) - (readNumber(right, "timestamp_s") ?? 0);
+  });
+
+  return prioritized
+    .slice(0, MAX_VISIBLE_EVENTS)
+    .sort(
+      (left, right) =>
+        (readNumber(left, "timestamp_s") ?? 0) - (readNumber(right, "timestamp_s") ?? 0)
+    );
+}
+
+function severityPriority(event: BehaviorEvent): number {
+  const tone = severityClass(readString(event, "severity") ?? "normal");
+  if (tone === "high") {
+    return 10;
+  }
+  if (tone === "review") {
+    return 35;
+  }
+  if (tone === "unknown") {
+    return 65;
+  }
+  return 85;
+}
+
+function buildThroughputMetrics(analysis: AnalysisRecord | null): MetricItem[] {
+  if (!analysis) {
+    return [];
+  }
+
+  // Keep source/playback timing separate from analysis throughput so FPS claims stay honest.
+  return [
+    {
+      icon: <GaugeIcon />,
+      label: "Source Video FPS",
+      value: formatOptionalDecimal(
+        readAnalysisMetric(analysis, ["source_video_fps", "source_fps", "fps"])
+      )
+    },
+    {
+      icon: <GaugeIcon />,
+      label: "CPU Analysis FPS",
+      value: formatOptionalDecimal(
+        readAnalysisMetric(analysis, [
+          "cpu_analysis_throughput_fps",
+          "analysis_throughput_fps"
+        ])
+      )
+    },
+    {
+      icon: <GaugeIcon />,
+      label: "End-to-End Processing FPS",
+      value: formatOptionalDecimal(
+        readAnalysisMetric(analysis, [
+          "end_to_end_processing_fps",
+          "end_to_end_throughput_fps",
+          "processing_fps"
+        ])
+      )
+    },
+    {
+      icon: <GaugeIcon />,
+      label: "Effective Analysis FPS",
+      value: formatOptionalDecimal(
+        readAnalysisMetric(analysis, [
+          "effective_analysis_fps",
+          "sampled_analysis_fps",
+          "source_video_fps"
+        ])
+      )
+    }
+  ];
+}
+
 function buildOptionalMetrics(analysis: AnalysisRecord | null): MetricItem[] {
   if (!analysis) {
     return [];
   }
 
   const metrics = [
+    {
+      icon: <ShieldIcon />,
+      label: "Scene Reliability",
+      value: readAnalysisText(analysis, [
+        "scene_reliability"
+      ])
+    },
+    {
+      icon: <FilmIcon />,
+      label: "Analyzed Frames",
+      value: readAnalysisMetric(analysis, [
+        "frames_analyzed",
+        "analyzed_frames_count"
+      ])
+    },
     {
       icon: <ActivityIcon />,
       label: "Tracking Confidence",
@@ -937,8 +1239,35 @@ function buildOptionalMetrics(analysis: AnalysisRecord | null): MetricItem[] {
     .map((metric) => ({
       icon: metric.icon,
       label: metric.label,
-      value: formatOptionalDecimal(metric.value)
+      value:
+        typeof metric.value === "number"
+          ? formatOptionalDecimal(metric.value)
+          : String(metric.value)
     }));
+}
+
+function readAnalysisText(
+  analysis: AnalysisRecord,
+  keys: string[]
+): string | undefined {
+  const sources = [
+    analysis.summary,
+    analysis.result,
+    readRecord(analysis.summary, "metrics"),
+    readRecord(analysis.result, "metrics"),
+    readRecord(analysis.result, "summary")
+  ];
+
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = readString(source, key);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function readAnalysisMetric(
@@ -988,8 +1317,8 @@ function PipelineSection() {
       icon: <ChartIcon />
     },
     {
-      title: "Fall-Risk Indicators",
-      subtitle: "Identify risk events",
+      title: "Mobility Review Events",
+      subtitle: "Flag review events",
       icon: <ShieldIcon />
     }
   ];
@@ -1019,24 +1348,33 @@ function PipelineSection() {
 
 function buildTrackRows(
   tracks: TrackSummary[],
-  frames: unknown[] | undefined
+  frames: unknown[] | undefined,
+  events: BehaviorEvent[]
 ): TrackRow[] {
   const observationsByTrack = observationsFromFrames(frames);
+  const eventCounts = eventCountsByTrack(events);
+  const riskByTrack = highestRiskByTrack(events);
+  const hasQualification = tracks.some((track) => typeof track.qualified === "boolean");
+  const displayTracks = hasQualification
+    ? tracks.filter((track) => track.qualified === true)
+    : tracks;
   const ids = new Set<number>();
 
-  for (const track of tracks) {
+  for (const track of displayTracks) {
     if (Number.isFinite(track.track_id)) {
       ids.add(track.track_id);
     }
   }
-  for (const id of observationsByTrack.keys()) {
-    ids.add(id);
+  if (!hasQualification) {
+    for (const id of observationsByTrack.keys()) {
+      ids.add(id);
+    }
   }
 
   return Array.from(ids)
     .sort((left, right) => left - right)
     .map((id) => {
-      const track = tracks.find((candidate) => candidate.track_id === id);
+      const track = displayTracks.find((candidate) => candidate.track_id === id);
       const featureRecord = isRecord(track?.features) ? track?.features : undefined;
       const explicitTrajectory = trajectoryPointsFromTrack(track, featureRecord);
       const observedPoints = observationsByTrack.get(id) ?? [];
@@ -1066,9 +1404,97 @@ function buildTrackRows(
           readNumber(track, "mobility_stability") ??
           readNumber(featureRecord, "path_stability") ??
           readNumber(featureRecord, "mobility_stability"),
+        eventCount: eventCounts.get(id) ?? 0,
+        motionSummary: summarizeTrackMotion(track, featureRecord, points),
+        riskTone:
+          normalizeTone(readString(track, "risk_level")) ??
+          riskByTrack.get(id) ??
+          "normal",
         points
       };
     });
+}
+
+function normalizeTone(value: string | undefined): SeverityTone | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.toLowerCase();
+  if (normalized === "normal" || normalized === "stable" || normalized === "low") {
+    return "normal";
+  }
+  if (normalized === "review" || normalized === "review_needed" || normalized === "medium") {
+    return "review";
+  }
+  if (normalized === "unknown" || normalized === "insufficient_evidence") {
+    return "unknown";
+  }
+  if (normalized === "high") {
+    return "high";
+  }
+  return undefined;
+}
+
+function eventCountsByTrack(events: BehaviorEvent[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const event of events) {
+    const trackId = readNumber(event, "track_id");
+    if (trackId === undefined) {
+      continue;
+    }
+    counts.set(trackId, (counts.get(trackId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function highestRiskByTrack(events: BehaviorEvent[]): Map<number, SeverityTone> {
+  const risk = new Map<number, SeverityTone>();
+  for (const event of events) {
+    const trackId = readNumber(event, "track_id");
+    if (trackId === undefined) {
+      continue;
+    }
+    const tone = severityClass(readString(event, "severity") ?? "low");
+    const existing = risk.get(trackId);
+    if (!existing || riskRank(tone) > riskRank(existing)) {
+      risk.set(trackId, tone);
+    }
+  }
+  return risk;
+}
+
+function summarizeTrackMotion(
+  track: TrackSummary | undefined,
+  featureRecord: Record<string, unknown> | undefined,
+  points: TrackPoint[]
+): string {
+  const explicitState =
+    readString(track, "motion_state") ??
+    readString(track, "status");
+  if (explicitState) {
+    return explicitState.toLowerCase();
+  }
+  const variance = readNumber(featureRecord, "position_variance_px2");
+  if (variance !== undefined && variance >= 1125) {
+    return "review";
+  }
+
+  const dwellTime = readNumber(featureRecord, "dwell_time_s");
+  if (dwellTime !== undefined && dwellTime >= 8) {
+    return "prolonged stop";
+  }
+
+  const recentSpeed = readNumber(featureRecord, "recent_speed_px_s");
+  const meanSpeed = readNumber(featureRecord, "mean_speed_px_s");
+  const speed = recentSpeed ?? meanSpeed;
+  if (speed !== undefined && speed <= 18) {
+    return "slow walking";
+  }
+
+  if (points.length < 2) {
+    return "acquiring";
+  }
+  return "walking";
 }
 
 function trajectoryPointsFromTrack(
@@ -1275,15 +1701,68 @@ function capitalize(value: string): string {
   return `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}`;
 }
 
-function severityClass(value: string): "low" | "medium" | "high" {
+function severityClass(value: string): SeverityTone {
   const normalized = value.toLowerCase();
   if (normalized.includes("high") || normalized.includes("critical")) {
     return "high";
   }
-  if (normalized.includes("medium") || normalized.includes("moderate")) {
-    return "medium";
+  if (
+    normalized.includes("review") ||
+    normalized.includes("medium") ||
+    normalized.includes("moderate") ||
+    normalized.includes("uncertain")
+  ) {
+    return "review";
   }
-  return "low";
+  if (
+    normalized.includes("unknown") ||
+    normalized.includes("insufficient") ||
+    normalized.includes("evidence")
+  ) {
+    return "unknown";
+  }
+  return "normal";
+}
+
+function riskRank(value: SeverityTone): number {
+  if (value === "high") {
+    return 3;
+  }
+  if (value === "review") {
+    return 2;
+  }
+  if (value === "unknown") {
+    return 1;
+  }
+  return 0;
+}
+
+function severityLabel(value: SeverityTone): string {
+  if (value === "review") {
+    return "Review";
+  }
+  if (value === "unknown") {
+    return "Unknown";
+  }
+  return capitalize(value);
+}
+
+function activateOnKey(
+  event: KeyboardEvent<HTMLElement>,
+  action: () => void
+): void {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  action();
+}
+
+function eventCardKey(event: BehaviorEvent, index: number): string {
+  return (
+    readString(event, "event_id") ??
+    `${readNumber(event, "track_id") ?? "na"}-${readString(event, "event_type") ?? "event"}-${index}`
+  );
 }
 
 function readRecord(

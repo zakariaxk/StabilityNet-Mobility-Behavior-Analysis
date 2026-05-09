@@ -13,6 +13,9 @@ class TrackPoint:
     frame_index: int
     timestamp_s: float
     center: tuple[float, float]
+    confidence: float
+    bbox_width: float
+    bbox_height: float
     is_confirmed: bool
 
 
@@ -27,6 +30,9 @@ class TrackHistory:
             frame_index=observation.frame_index,
             timestamp_s=observation.timestamp_s,
             center=observation.center,
+            confidence=observation.confidence,
+            bbox_width=observation.bbox.width,
+            bbox_height=observation.bbox.height,
             is_confirmed=observation.is_confirmed,
         )
         self.points.append(point)
@@ -62,4 +68,3 @@ class TrackStore:
 
     def all_histories(self) -> list[TrackHistory]:
         return list(self._histories.values())
-

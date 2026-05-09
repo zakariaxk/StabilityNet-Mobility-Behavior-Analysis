@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "StabilityNet",
-  description: "Video-based mobility and fall-risk analysis."
+  description: "Uploaded-video mobility review analysis."
 };
 
 export default function RootLayout({

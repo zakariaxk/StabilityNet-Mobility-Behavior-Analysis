@@ -54,6 +54,8 @@ type TrackRow = {
   frames: number;
   averageConfidence?: number;
   pathStability?: number;
+  eventCount: number;
+  motionSummary: string;
   points: TrackPoint[];
 };
 
@@ -125,8 +127,8 @@ export default function StabilityNetPage() {
   const tracks = useMemo(() => analysisTracks(analysis), [analysis]);
   const events = useMemo(() => analysisEvents(analysis), [analysis]);
   const trackRows = useMemo(
-    () => buildTrackRows(tracks, analysis?.result?.frames),
-    [analysis?.result?.frames, tracks]
+    () => buildTrackRows(tracks, analysis?.result?.frames, events),
+    [analysis?.result?.frames, events, tracks]
   );
   const annotatedVideoUrl = analysis ? analysisVideoUrl(analysis) : null;
   const hasAnalysisResult = analysis !== null;
@@ -137,13 +139,19 @@ export default function StabilityNetPage() {
       analysis?.result?.frames_processed
   );
   const trackCount = numberOrZero(
-    analysis?.tracks_count ??
+    analysis?.qualified_subject_count ??
+      readNumber(analysis?.summary, "qualified_subject_count") ??
+      readNumber(analysis?.result, "qualified_subject_count") ??
+      analysis?.tracks_count ??
       readNumber(analysis?.summary, "tracks_count") ??
       readNumber(analysis?.summary, "track_count") ??
       trackRows.length
   );
   const eventCount = numberOrZero(
-    analysis?.events_count ??
+    analysis?.mobility_event_count ??
+      readNumber(analysis?.summary, "mobility_event_count") ??
+      readNumber(analysis?.result, "mobility_event_count") ??
+      analysis?.events_count ??
       readNumber(analysis?.summary, "events_count") ??
       readNumber(analysis?.summary, "event_count") ??
       events.length
@@ -369,7 +377,7 @@ function Sidebar() {
         <WalkingIcon className="brand-icon" />
         <div>
           <strong>StabilityNet</strong>
-          <p>Video-based mobility and fall-risk analysis</p>
+          <p>Video-based mobility risk indicator analysis</p>
         </div>
       </div>
 
@@ -384,7 +392,7 @@ function Sidebar() {
         <strong>Research Prototype</strong>
         <p>
           This system analyzes uploaded videos to extract mobility patterns and
-          identify potential fall-risk indicators.
+          identify mobility risk indicators that require review.
         </p>
         <span>Not a medical device.</span>
       </div>
@@ -417,11 +425,11 @@ function Header({ health }: { health: HealthState }) {
       <div className="hero-copy">
         <h1>StabilityNet</h1>
         <p className="hero-subtitle">
-          Video-based mobility and fall-risk analysis
+          Video-based mobility risk indicator analysis
         </p>
         <p className="hero-intro">
           Upload a video or try a sample to analyze human motion, track
-          individuals, and detect mobility events that may indicate fall risk.
+          individuals, and detect mobility events that may require review.
         </p>
       </div>
       <div className={`online-pill online-pill--${health.state}`}>
@@ -861,7 +869,9 @@ function TracksTable({
                 <span className={`track-id track-id--${index % 4}`}>{track.id}</span>
                 <div>
                   <strong>Subject {track.id}</strong>
-                  <span>{track.frames.toLocaleString()} frames</span>
+                  <span>
+                    {track.frames.toLocaleString()} frames • {track.motionSummary}
+                  </span>
                 </div>
               </div>
               <dl className="subject-stats">
@@ -872,6 +882,14 @@ function TracksTable({
                 <div>
                   <dt>Confidence</dt>
                   <dd>{formatOptionalDecimal(track.averageConfidence)}</dd>
+                </div>
+                <div>
+                  <dt>Events</dt>
+                  <dd>{track.eventCount.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>Motion</dt>
+                  <dd>{track.motionSummary}</dd>
                 </div>
               </dl>
               <TrajectoryCell track={track} tone={index % 4} />
@@ -1164,9 +1182,11 @@ function PipelineSection() {
 
 function buildTrackRows(
   tracks: TrackSummary[],
-  frames: unknown[] | undefined
+  frames: unknown[] | undefined,
+  events: BehaviorEvent[]
 ): TrackRow[] {
   const observationsByTrack = observationsFromFrames(frames);
+  const eventCounts = eventCountsByTrack(events);
   const ids = new Set<number>();
 
   for (const track of tracks) {
@@ -1197,6 +1217,10 @@ function buildTrackRows(
           : undefined);
       const framesCount =
         readNumber(track, "observations") ?? readNumber(featureRecord, "observations");
+      const motionSummary =
+        readString(track, "motion_state") ??
+        readString(track, "status") ??
+        summarizeTrackMotion(featureRecord, points);
 
       return {
         id,
@@ -1211,9 +1235,46 @@ function buildTrackRows(
           readNumber(track, "mobility_stability") ??
           readNumber(featureRecord, "path_stability") ??
           readNumber(featureRecord, "mobility_stability"),
+        eventCount: eventCounts.get(id) ?? 0,
+        motionSummary,
         points
       };
     });
+}
+
+function eventCountsByTrack(events: BehaviorEvent[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const event of events) {
+    const trackId = readNumber(event, "track_id");
+    if (trackId === undefined) {
+      continue;
+    }
+    counts.set(trackId, (counts.get(trackId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function summarizeTrackMotion(
+  featureRecord: Record<string, unknown> | undefined,
+  points: TrackPoint[]
+): string {
+  const speed = readNumber(featureRecord, "average_speed_px_s");
+  const variance =
+    readNumber(featureRecord, "position_variance_px2") ??
+    readNumber(featureRecord, "path_variance_px2");
+  if (variance !== undefined && variance > 900) {
+    return "unstable";
+  }
+  if (speed !== undefined) {
+    if (speed < 2) {
+      return "stationary";
+    }
+    if (speed < 18) {
+      return "slow walking";
+    }
+    return "walking";
+  }
+  return points.length > 1 ? "walking" : "tracking";
 }
 
 function trajectoryPointsFromTrack(

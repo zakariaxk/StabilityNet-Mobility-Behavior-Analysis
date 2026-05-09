@@ -148,17 +148,12 @@ export default function StabilityNetPage() {
       readNumber(analysis?.summary, "event_count") ??
       events.length
   );
-  const processingFps = formatOptionalDecimal(
-    analysis?.processing_fps ??
-      readNumber(analysis?.summary, "processing_fps") ??
-      readNumber(analysis?.result, "processing_fps")
-  );
   const selectedTrack = useMemo(
     () => trackRows.find((track) => track.id === selectedTrackId) ?? null,
     [selectedTrackId, trackRows]
   );
-  const optionalMetrics = useMemo(
-    () => buildOptionalMetrics(analysis),
+  const summaryMetrics = useMemo(
+    () => buildSummaryMetrics(analysis),
     [analysis]
   );
 
@@ -332,8 +327,7 @@ export default function StabilityNetPage() {
             framesProcessed={framesProcessed}
             trackCount={trackCount}
             eventCount={eventCount}
-            optionalMetrics={optionalMetrics}
-            processingFps={processingFps}
+            summaryMetrics={summaryMetrics}
           />
 
           <div className={`results-grid${hasAnalysisResult ? " results-grid--analyzed" : ""}`}>
@@ -618,15 +612,13 @@ function SummaryCards({
   framesProcessed,
   trackCount,
   eventCount,
-  optionalMetrics,
-  processingFps
+  summaryMetrics
 }: {
   status: string;
   framesProcessed: number;
   trackCount: number;
   eventCount: number;
-  optionalMetrics: MetricItem[];
-  processingFps: string;
+  summaryMetrics: MetricItem[];
 }) {
   return (
     <section className="panel summary-panel" id="results" aria-labelledby="summary-title">
@@ -648,7 +640,7 @@ function SummaryCards({
           label="Mobility Events"
           value={eventCount.toLocaleString()}
         />
-        {optionalMetrics.map((metric) => (
+        {summaryMetrics.map((metric) => (
           <MetricCard
             key={metric.label}
             icon={metric.icon}
@@ -656,7 +648,6 @@ function SummaryCards({
             value={metric.value}
           />
         ))}
-        <MetricCard icon={<GaugeIcon />} label="Processing FPS" value={processingFps} />
       </div>
     </section>
   );
@@ -1028,54 +1019,49 @@ function analysisEvents(analysis: AnalysisRecord | null): BehaviorEvent[] {
     : safeArray(analysis?.result?.events);
 }
 
-function buildOptionalMetrics(analysis: AnalysisRecord | null): MetricItem[] {
-  if (!analysis) {
-    return [];
-  }
-
-  const metrics = [
-    {
-      icon: <ActivityIcon />,
-      label: "Tracking Confidence",
-      value: readAnalysisMetric(analysis, [
-        "tracking_confidence",
-        "average_tracking_confidence",
-        "avg_tracking_confidence"
-      ])
-    },
+function buildSummaryMetrics(analysis: AnalysisRecord | null): MetricItem[] {
+  return [
     {
       icon: <ShieldIcon />,
-      label: "Mobility Stability",
-      value: readAnalysisMetric(analysis, [
-        "mobility_stability",
-        "path_stability",
-        "stability_score"
-      ])
+      label: "Scene Reliability",
+      value:
+        readAnalysisText(analysis, ["scene_reliability"]) ??
+        "Unavailable"
     },
     {
-      icon: <ChartIcon />,
-      label: "Gait Variability",
-      value: readAnalysisMetric(analysis, [
-        "gait_variability",
-        "gait_variability_score",
-        "stride_variability"
-      ])
+      icon: <FilmIcon />,
+      label: "Analyzed Frames",
+      value: formatMetricNumber(
+        readAnalysisMetric(analysis, ["frames_analyzed", "analyzed_frames_count"])
+      )
+    },
+    {
+      icon: <GaugeIcon />,
+      label: "Source Video FPS",
+      value: formatMetricNumber(
+        readAnalysisMetric(analysis, ["source_video_fps", "source_fps", "fps"])
+      )
+    },
+    {
+      icon: <GaugeIcon />,
+      label: "CPU Analysis FPS",
+      value: formatMetricNumber(
+        readAnalysisMetric(analysis, [
+          "cpu_analysis_throughput_fps",
+          "analysis_throughput_fps"
+        ])
+      )
     }
   ];
-
-  return metrics
-    .filter((metric) => metric.value !== undefined)
-    .map((metric) => ({
-      icon: metric.icon,
-      label: metric.label,
-      value: formatOptionalDecimal(metric.value)
-    }));
 }
 
 function readAnalysisMetric(
-  analysis: AnalysisRecord,
+  analysis: AnalysisRecord | null,
   keys: string[]
 ): number | undefined {
+  if (!analysis) {
+    return undefined;
+  }
   const sources = [
     analysis.summary,
     analysis.result,
@@ -1087,6 +1073,34 @@ function readAnalysisMetric(
   for (const source of sources) {
     for (const key of keys) {
       const value = readNumber(source, key);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function readAnalysisText(
+  analysis: AnalysisRecord | null,
+  keys: string[]
+): string | undefined {
+  if (!analysis) {
+    return undefined;
+  }
+
+  const sources = [
+    analysis.summary,
+    analysis.result,
+    readRecord(analysis.summary, "metrics"),
+    readRecord(analysis.result, "metrics"),
+    readRecord(analysis.result, "summary")
+  ];
+
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = readString(source, key);
       if (value !== undefined) {
         return value;
       }
@@ -1381,6 +1395,12 @@ function formatOptionalDecimal(value: number | undefined): string {
   }
 
   return value >= 10 ? value.toFixed(1) : value.toFixed(2);
+}
+
+function formatMetricNumber(value: number | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? formatOptionalDecimal(value)
+    : "–";
 }
 
 function humanizeStatus(value: string): string {

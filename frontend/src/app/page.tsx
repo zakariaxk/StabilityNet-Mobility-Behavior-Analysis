@@ -3,6 +3,7 @@
 import type {
   ChangeEvent,
   DragEvent,
+  KeyboardEvent,
   ReactNode,
   SVGProps
 } from "react";
@@ -60,6 +61,7 @@ type IconProps = SVGProps<SVGSVGElement>;
 
 export default function StabilityNetPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [selectedSampleId, setSelectedSampleId] = useState<string | null>(
     SAMPLE_VIDEOS[0].id
   );
@@ -74,6 +76,8 @@ export default function StabilityNetPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [processingStageIndex, setProcessingStageIndex] = useState(0);
+  const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
+  const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
 
   useEffect(() => {
     let isCurrent = true;
@@ -149,10 +153,41 @@ export default function StabilityNetPage() {
       readNumber(analysis?.summary, "processing_fps") ??
       readNumber(analysis?.result, "processing_fps")
   );
+  const selectedTrack = useMemo(
+    () => trackRows.find((track) => track.id === selectedTrackId) ?? null,
+    [selectedTrackId, trackRows]
+  );
   const optionalMetrics = useMemo(
     () => buildOptionalMetrics(analysis),
     [analysis]
   );
+
+  function seekToTimestamp(timestamp: number | undefined): void {
+    if (timestamp === undefined) {
+      return;
+    }
+    const player = videoRef.current;
+    if (!player) {
+      return;
+    }
+    player.currentTime = Math.max(0, timestamp);
+    void player.play().catch(() => {
+      // Keep selection behavior graceful when autoplay is blocked.
+    });
+  }
+
+  function handleTrackSelect(trackId: number): void {
+    setSelectedTrackId(trackId);
+  }
+
+  function handleEventSelect(event: BehaviorEvent, index: number): void {
+    setSelectedEventKey(eventCardKey(event, index));
+    const trackId = readNumber(event, "track_id");
+    if (trackId !== undefined) {
+      setSelectedTrackId(trackId);
+    }
+    seekToTimestamp(readNumber(event, "timestamp_s"));
+  }
 
   async function handleAnalyze() {
     if (!videoFile && !selectedSample) {
@@ -168,6 +203,8 @@ export default function StabilityNetPage() {
       const record = videoFile
         ? await uploadAnalysis(videoFile)
         : await createAnalysis({ video_path: selectedSample!.videoPath });
+      setSelectedTrackId(null);
+      setSelectedEventKey(null);
       setAnalysis(record);
       if (selectedSample) {
         setUnavailableSampleIds((sampleIds) =>
@@ -212,6 +249,8 @@ export default function StabilityNetPage() {
 
     setError(null);
     setAnalysis(null);
+    setSelectedTrackId(null);
+    setSelectedEventKey(null);
     setSelectedSampleId(null);
     setVideoFile(file);
   }
@@ -225,6 +264,8 @@ export default function StabilityNetPage() {
   function handleSampleSelect(sampleId: string) {
     setError(null);
     setAnalysis(null);
+    setSelectedTrackId(null);
+    setSelectedEventKey(null);
     setSelectedSampleId(sampleId);
     setVideoFile(null);
     if (fileInputRef.current) {
@@ -299,12 +340,24 @@ export default function StabilityNetPage() {
             <AnnotatedVideo
               events={events}
               hasResult={hasAnalysisResult}
+              onSelectEvent={handleEventSelect}
+              selectedEventKey={selectedEventKey}
+              selectedTrack={selectedTrack}
               videoDurationSeconds={videoDurationSeconds}
+              videoRef={videoRef}
               videoUrl={annotatedVideoUrl}
             />
             <div className="results-side">
-              <TracksTable tracks={trackRows} />
-              <EventsTable events={events} />
+              <TracksTable
+                onSelectTrack={handleTrackSelect}
+                selectedTrackId={selectedTrackId}
+                tracks={trackRows}
+              />
+              <EventsTable
+                events={events}
+                onSelectEvent={handleEventSelect}
+                selectedEventKey={selectedEventKey}
+              />
             </div>
           </div>
 
@@ -632,12 +685,20 @@ function MetricCard({
 function AnnotatedVideo({
   events,
   hasResult,
+  onSelectEvent,
+  selectedEventKey,
+  selectedTrack,
   videoDurationSeconds,
+  videoRef,
   videoUrl
 }: {
   events: BehaviorEvent[];
   hasResult: boolean;
+  onSelectEvent: (event: BehaviorEvent, index: number) => void;
+  selectedEventKey: string | null;
+  selectedTrack: TrackRow | null;
   videoDurationSeconds?: number;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   videoUrl: string | null;
 }) {
   const [failedVideoUrl, setFailedVideoUrl] = useState<string | null>(null);
@@ -663,6 +724,7 @@ function AnnotatedVideo({
       <div className="video-frame">
         {videoUrl && !videoLoadError ? (
           <video
+            ref={videoRef}
             className="annotated-video"
             src={videoUrl}
             controls
@@ -691,25 +753,46 @@ function AnnotatedVideo({
           </div>
         )}
       </div>
-      <EventMarkers events={events} videoDurationSeconds={videoDurationSeconds} />
+      <EventMarkers
+        events={events}
+        onSelectEvent={onSelectEvent}
+        selectedEventKey={selectedEventKey}
+        videoDurationSeconds={videoDurationSeconds}
+      />
+      {selectedTrack ? (
+        <div className="video-selection-hint" aria-live="polite">
+          Selected Subject {selectedTrack.id}
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function EventMarkers({
   events,
+  onSelectEvent,
+  selectedEventKey,
   videoDurationSeconds
 }: {
   events: BehaviorEvent[];
+  onSelectEvent: (event: BehaviorEvent, index: number) => void;
+  selectedEventKey: string | null;
   videoDurationSeconds?: number;
 }) {
   const timedEvents = events
-    .map((event) => ({
+    .map((event, index) => ({
       event,
+      index,
+      key: eventCardKey(event, index),
       timestamp: readNumber(event, "timestamp_s")
     }))
     .filter(
-      (entry): entry is { event: BehaviorEvent; timestamp: number } =>
+      (entry): entry is {
+        event: BehaviorEvent;
+        index: number;
+        key: string;
+        timestamp: number;
+      } =>
         entry.timestamp !== undefined
     );
 
@@ -723,14 +806,22 @@ function EventMarkers({
   return (
     <div className="event-marker-strip" aria-label="Video event markers">
       <div className="event-marker-track">
-        {timedEvents.map(({ event, timestamp }, index) => {
+        {timedEvents.map(({ event, index, key, timestamp }) => {
           const severityTone = severityClass(readString(event, "severity") ?? "low");
           const left = Math.min(100, Math.max(0, (timestamp / duration) * 100));
+          const isSelected = selectedEventKey === key;
 
           return (
-            <span
-              className={`event-marker event-marker--${severityTone}`}
-              key={event.event_id ?? `${event.track_id}-${event.event_type}-${index}`}
+            <button
+              aria-label={`${humanizeEventType(
+                readString(event, "event_type") ?? "event"
+              )} at ${formatOptionalDecimal(timestamp)} seconds`}
+              className={`event-marker event-marker--${severityTone}${
+                isSelected ? " event-marker--selected" : ""
+              }`}
+              key={key}
+              onClick={() => onSelectEvent(event, index)}
+              type="button"
               style={{ left: `${left}%` }}
               title={`${formatOptionalDecimal(timestamp)}s: ${humanizeEventType(
                 readString(event, "event_type") ?? "event"
@@ -744,7 +835,15 @@ function EventMarkers({
   );
 }
 
-function TracksTable({ tracks }: { tracks: TrackRow[] }) {
+function TracksTable({
+  onSelectTrack,
+  selectedTrackId,
+  tracks
+}: {
+  onSelectTrack: (trackId: number) => void;
+  selectedTrackId: number | null;
+  tracks: TrackRow[];
+}) {
   return (
     <section className="panel table-panel" aria-labelledby="tracks-title">
       <div className="table-heading">
@@ -753,8 +852,20 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
       </div>
       {tracks.length > 0 ? (
         <div className="subject-list">
-          {tracks.map((track, index) => (
-            <article className="subject-row" key={track.id}>
+          {tracks.map((track, index) => {
+            const isSelected = selectedTrackId === track.id;
+            return (
+            <article
+              aria-pressed={isSelected}
+              className={`subject-row subject-row--interactive${
+                isSelected ? " subject-row--selected" : ""
+              }`}
+              key={track.id}
+              onClick={() => onSelectTrack(track.id)}
+              onKeyDown={(event) => activateOnCardKey(event, () => onSelectTrack(track.id))}
+              role="button"
+              tabIndex={0}
+            >
               <div className="subject-row-main">
                 <span className={`track-id track-id--${index % 4}`}>{track.id}</span>
                 <div>
@@ -774,7 +885,8 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
               </dl>
               <TrajectoryCell track={track} tone={index % 4} />
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <EmptyState
@@ -786,7 +898,15 @@ function TracksTable({ tracks }: { tracks: TrackRow[] }) {
   );
 }
 
-function EventsTable({ events }: { events: BehaviorEvent[] }) {
+function EventsTable({
+  events,
+  onSelectEvent,
+  selectedEventKey
+}: {
+  events: BehaviorEvent[];
+  onSelectEvent: (event: BehaviorEvent, index: number) => void;
+  selectedEventKey: string | null;
+}) {
   return (
     <section className="panel table-panel" aria-labelledby="events-title">
       <div className="table-heading">
@@ -804,11 +924,22 @@ function EventsTable({ events }: { events: BehaviorEvent[] }) {
               readString(event, "reason") ??
               readString(event, "description") ??
               "Mobility pattern observed";
+            const key = eventCardKey(event, index);
+            const isSelected = selectedEventKey === key;
 
             return (
               <article
-                className="event-row"
-                key={event.event_id ?? `${event.track_id}-${event.event_type}-${index}`}
+                aria-pressed={isSelected}
+                className={`event-row event-row--interactive${
+                  isSelected ? " event-row--selected" : ""
+                }`}
+                key={key}
+                onClick={() => onSelectEvent(event, index)}
+                onKeyDown={(keyboardEvent) =>
+                  activateOnCardKey(keyboardEvent, () => onSelectEvent(event, index))
+                }
+                role="button"
+                tabIndex={0}
               >
                 <div className="event-row-top">
                   <strong>{eventType}</strong>
@@ -1273,6 +1404,24 @@ function humanizeEventType(value: string): string {
 
 function capitalize(value: string): string {
   return `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}`;
+}
+
+function activateOnCardKey(
+  event: KeyboardEvent<HTMLElement>,
+  action: () => void
+): void {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  action();
+}
+
+function eventCardKey(event: BehaviorEvent, index: number): string {
+  return (
+    readString(event, "event_id") ??
+    `${readNumber(event, "track_id") ?? "na"}-${readString(event, "event_type") ?? "event"}-${index}`
+  );
 }
 
 function severityClass(value: string): "low" | "medium" | "high" {

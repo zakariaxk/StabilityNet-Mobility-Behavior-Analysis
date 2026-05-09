@@ -973,6 +973,13 @@ svg {
   font-weight: 750;
 }
 
+.video-selection-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
 .event-marker-track {
   position: relative;
   height: 15px;
@@ -986,9 +993,32 @@ svg {
   top: 50%;
   width: 9px;
   height: 9px;
+  padding: 0;
   border: 2px solid #ffffff;
   border-radius: 999px;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
   transform: translate(-50%, -50%);
+}
+
+.event-marker:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+}
+
+.event-marker:focus-visible {
+  box-shadow: 0 0 0 3px rgba(11, 143, 206, 0.34);
+}
+
+.event-marker--selected {
+  box-shadow: 0 0 0 3px rgba(7, 89, 133, 0.32);
+  transform: translate(-50%, -50%) scale(1.2);
+}
+
+.event-marker--selected:focus-visible {
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.95),
+    0 0 0 5px rgba(7, 89, 133, 0.34);
 }
 
 .event-marker--low {
@@ -1058,6 +1088,30 @@ svg {
   border-radius: 16px;
   background: linear-gradient(180deg, #ffffff 0%, #f7fdff 100%);
   padding: 12px;
+}
+
+.subject-row--interactive,
+.event-row--interactive {
+  cursor: pointer;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+}
+
+.subject-row--interactive:hover,
+.event-row--interactive:hover {
+  border-color: #b0dbe9;
+  box-shadow: 0 10px 20px rgba(16, 42, 67, 0.08);
+}
+
+.subject-row--interactive:focus-visible,
+.event-row--interactive:focus-visible {
+  outline: 2px solid rgba(11, 143, 206, 0.5);
+  outline-offset: 1px;
+}
+
+.subject-row--selected,
+.event-row--selected {
+  border-color: #7dcbe2;
+  box-shadow: 0 12px 24px rgba(7, 89, 133, 0.12);
 }
 
 .subject-row-main,

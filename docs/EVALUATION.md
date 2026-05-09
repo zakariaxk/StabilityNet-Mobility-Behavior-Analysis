@@ -15,6 +15,6 @@ Phase 1 evaluation is focused on pipeline correctness, not clinical validity.
 ## Deferred
 
 - Real-world gait speed validation.
-- Clinical fall-risk validation.
+- Clinical mobility-risk correlation validation.
 - Camera calibration benchmarks.
 - Multi-camera consistency.

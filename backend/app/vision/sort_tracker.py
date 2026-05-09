@@ -27,9 +27,9 @@ class _TrackedObject:
     def is_confirmed(self) -> bool:
         return self.hits >= 1
 
-    def update(self, detection: Detection, *, smoothing_alpha: float) -> None:
-        self.bbox = _smooth_bbox(self.bbox, detection.bbox, smoothing_alpha)
-        self.confidence = (self.confidence * 0.35) + (detection.confidence * 0.65)
+    def update(self, detection: Detection) -> None:
+        self.bbox = detection.bbox
+        self.confidence = detection.confidence
         self.hits += 1
         self.missed_frames = 0
 
@@ -56,10 +56,7 @@ class SortTracker:
 
         for track_id, detection_index in matches:
             track = self._tracks[track_id]
-            track.update(
-                detections[detection_index],
-                smoothing_alpha=self.config.smoothing_alpha,
-            )
+            track.update(detections[detection_index])
             observations.append(self._to_observation(track, frame_index, timestamp_s))
 
         for detection_index in unmatched_detection_indices:
@@ -81,13 +78,7 @@ class SortTracker:
         candidate_pairs: list[tuple[float, int, int]] = []
         for track_id, track in self._tracks.items():
             for detection_index, detection in enumerate(detections):
-                iou_score = bbox_iou(track.bbox, detection.bbox)
-                center_score = _center_match_score(
-                    track.bbox,
-                    detection.bbox,
-                    ratio=self.config.center_distance_threshold_ratio,
-                )
-                score = max(iou_score, center_score)
+                score = bbox_iou(track.bbox, detection.bbox)
                 if score >= self.config.iou_threshold:
                     candidate_pairs.append((score, track_id, detection_index))
 
@@ -143,35 +134,3 @@ class SortTracker:
             is_confirmed=track.hits >= self.config.min_hits,
         )
 
-
-def _smooth_bbox(
-    previous: BoundingBox,
-    current: BoundingBox,
-    alpha: float,
-) -> BoundingBox:
-    bounded_alpha = max(0.0, min(1.0, alpha))
-    previous_weight = 1.0 - bounded_alpha
-    return BoundingBox(
-        x1=previous.x1 * previous_weight + current.x1 * bounded_alpha,
-        y1=previous.y1 * previous_weight + current.y1 * bounded_alpha,
-        x2=previous.x2 * previous_weight + current.x2 * bounded_alpha,
-        y2=previous.y2 * previous_weight + current.y2 * bounded_alpha,
-    )
-
-
-def _center_match_score(
-    previous: BoundingBox,
-    current: BoundingBox,
-    *,
-    ratio: float,
-) -> float:
-    previous_center = previous.center
-    current_center = current.center
-    dx = current_center[0] - previous_center[0]
-    dy = current_center[1] - previous_center[1]
-    distance = (dx * dx + dy * dy) ** 0.5
-    scale = max(previous.width, previous.height, current.width, current.height, 1.0)
-    threshold = scale * max(0.1, ratio)
-    if distance > threshold:
-        return 0.0
-    return 1.0 - (distance / threshold)

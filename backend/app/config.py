@@ -10,46 +10,24 @@ DEFAULT_DETECTOR_MODEL = "yolo26n.pt"
 DETECTOR_MODEL_ENV = "STABILITYNET_DETECTOR_MODEL"
 DEFAULT_DETECTOR_DEVICE = "cpu"
 DETECTOR_DEVICE_ENV = "STABILITYNET_DETECTOR_DEVICE"
-DETECTOR_ANALYSIS_WIDTH_ENV = "STABILITYNET_ANALYSIS_WIDTH"
-ANALYSIS_FRAME_STRIDE_ENV = "STABILITYNET_ANALYSIS_FRAME_STRIDE"
-ANALYSIS_TARGET_FPS_ENV = "STABILITYNET_ANALYSIS_TARGET_FPS"
-DETECTION_CONF_THRESHOLD_ENV = "STABILITYNET_DETECTION_CONF_THRESHOLD"
-MAX_RENDERED_LABELS_ENV = "STABILITYNET_MAX_RENDERED_LABELS"
-DISPLAY_EVENT_LIMIT_ENV = "STABILITYNET_DISPLAY_EVENT_LIMIT"
-ANNOTATED_OUTPUT_MAX_WIDTH_ENV = "STABILITYNET_ANNOTATED_OUTPUT_MAX_WIDTH"
 YOLO26N_DOWNLOAD_URL = (
     "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt"
 )
-
-ANALYSIS_MAX_WIDTH = 640
-ANALYSIS_TARGET_FPS = 22.0
-DETECTION_CONF_THRESHOLD = 0.42
-TRACK_MIN_HITS = 5
-TRACK_MAX_AGE = 35
-TRACK_IOU_THRESHOLD = 0.22
-EVENT_MIN_TRACK_DURATION_SECONDS = 1.0
-EVENT_MIN_CONFIDENCE = 0.50
-MAX_RENDERED_LABELS_PER_FRAME = 5
-DISPLAY_EVENT_LIMIT = 12
-ANNOTATED_OUTPUT_MAX_WIDTH = 1280
 
 
 @dataclass(frozen=True)
 class DetectorConfig:
     model_name: str = DEFAULT_DETECTOR_MODEL
-    confidence_threshold: float = DETECTION_CONF_THRESHOLD
+    confidence_threshold: float = 0.35
     person_class_id: int = 0
     device: str = DEFAULT_DETECTOR_DEVICE
-    analysis_width: int | None = ANALYSIS_MAX_WIDTH
 
 
 @dataclass(frozen=True)
 class TrackerConfig:
-    max_age_frames: int = TRACK_MAX_AGE
-    min_hits: int = TRACK_MIN_HITS
-    iou_threshold: float = TRACK_IOU_THRESHOLD
-    smoothing_alpha: float = 0.62
-    center_distance_threshold_ratio: float = 0.75
+    max_age_frames: int = 20
+    min_hits: int = 3
+    iou_threshold: float = 0.3
 
 
 @dataclass(frozen=True)
@@ -59,10 +37,7 @@ class BehaviorConfig:
     slow_speed_threshold_px_s: float = 18.0
     unstable_variance_threshold_px2: float = 900.0
     feature_window_s: float = 5.0
-    min_track_duration_s: float = EVENT_MIN_TRACK_DURATION_SECONDS
-    min_event_confidence: float = EVENT_MIN_CONFIDENCE
-    min_track_frames: int = 10
-    event_cooldown_s: float = 2.5
+    min_track_duration_s: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -71,11 +46,6 @@ class PipelineConfig:
     tracker: TrackerConfig = TrackerConfig()
     behavior: BehaviorConfig = BehaviorConfig()
     fallback_fps: float = 30.0
-    analysis_frame_stride: int = 0
-    analysis_target_fps: float = ANALYSIS_TARGET_FPS
-    max_rendered_labels_per_frame: int = MAX_RENDERED_LABELS_PER_FRAME
-    display_event_limit: int = DISPLAY_EVENT_LIMIT
-    annotated_output_max_width: int | None = ANNOTATED_OUTPUT_MAX_WIDTH
     max_frames: int | None = None
 
 
@@ -99,80 +69,12 @@ class DetectorModelStatus:
 
 
 def pipeline_config_from_env() -> PipelineConfig:
-    analysis_width = _positive_int_from_env(
-        DETECTOR_ANALYSIS_WIDTH_ENV,
-        default=ANALYSIS_MAX_WIDTH,
-        minimum=160,
-    )
-    frame_stride = _int_from_env(ANALYSIS_FRAME_STRIDE_ENV, default=0, minimum=0)
-    target_fps = _positive_float_from_env(
-        ANALYSIS_TARGET_FPS_ENV,
-        default=ANALYSIS_TARGET_FPS,
-        minimum=1.0,
-    )
-    confidence_threshold = _positive_float_from_env(
-        DETECTION_CONF_THRESHOLD_ENV,
-        default=DETECTION_CONF_THRESHOLD,
-        minimum=0.01,
-    )
-    max_rendered_labels = _positive_int_from_env(
-        MAX_RENDERED_LABELS_ENV,
-        default=MAX_RENDERED_LABELS_PER_FRAME,
-        minimum=1,
-    )
-    display_event_limit = _positive_int_from_env(
-        DISPLAY_EVENT_LIMIT_ENV,
-        default=DISPLAY_EVENT_LIMIT,
-        minimum=1,
-    )
-    annotated_output_max_width = _positive_int_from_env(
-        ANNOTATED_OUTPUT_MAX_WIDTH_ENV,
-        default=ANNOTATED_OUTPUT_MAX_WIDTH,
-        minimum=320,
-    )
     return PipelineConfig(
         detector=DetectorConfig(
             model_name=os.getenv(DETECTOR_MODEL_ENV, DEFAULT_DETECTOR_MODEL),
             device=os.getenv(DETECTOR_DEVICE_ENV, DEFAULT_DETECTOR_DEVICE),
-            analysis_width=analysis_width,
-            confidence_threshold=confidence_threshold,
         ),
-        analysis_frame_stride=frame_stride,
-        analysis_target_fps=target_fps,
-        max_rendered_labels_per_frame=max_rendered_labels,
-        display_event_limit=display_event_limit,
-        annotated_output_max_width=annotated_output_max_width,
     )
-
-
-def _positive_int_from_env(name: str, default: int, minimum: int) -> int:
-    return _int_from_env(name, default=default, minimum=minimum)
-
-
-def _int_from_env(name: str, default: int, minimum: int) -> int:
-    raw_value = os.getenv(name)
-    if raw_value is None or not raw_value.strip():
-        return default
-    try:
-        parsed = int(raw_value)
-    except ValueError:
-        return default
-    if parsed < minimum:
-        return default
-    return parsed
-
-
-def _positive_float_from_env(name: str, default: float, minimum: float) -> float:
-    raw_value = os.getenv(name)
-    if raw_value is None or not raw_value.strip():
-        return default
-    try:
-        parsed = float(raw_value)
-    except ValueError:
-        return default
-    if parsed < minimum:
-        return default
-    return parsed
 
 
 def is_remote_detector_model_reference(model_name: str) -> bool:

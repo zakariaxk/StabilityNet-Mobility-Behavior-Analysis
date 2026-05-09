@@ -141,36 +141,9 @@ class AnalysisService:
             "tracks_count": result["tracks_count"],
             "events_count": result["events_count"],
             "fps": result["fps"],
-            "source_video_fps": result["source_video_fps"],
-            "source_fps": result["source_fps"],
-            "playback_fps": result["playback_fps"],
-            "cpu_analysis_throughput_fps": result["cpu_analysis_throughput_fps"],
-            "analysis_throughput_fps": result["analysis_throughput_fps"],
-            "analysis_inference_throughput_fps": result["analysis_inference_throughput_fps"],
-            "effective_analysis_fps": result["effective_analysis_fps"],
-            "sampled_analysis_fps": result["sampled_analysis_fps"],
-            "end_to_end_processing_fps": result["end_to_end_processing_fps"],
-            "end_to_end_throughput_fps": result["end_to_end_throughput_fps"],
             "processing_fps": result["processing_fps"],
-            "analysis_frame_stride": result["analysis_frame_stride"],
-            "analysis_stride_mode": result["analysis_stride_mode"],
-            "analysis_resolution_width": result["analysis_resolution_width"],
-            "annotated_output_max_width": result.get("annotated_output_max_width"),
-            "frames_analyzed": result["frames_analyzed"],
-            "analyzed_frames_count": result["analyzed_frames_count"],
-            "raw_track_count": result["raw_track_count"],
-            "qualified_subject_count": result["qualified_subject_count"],
-            "raw_event_count": result["raw_event_count"],
-            "mobility_event_count": result["mobility_event_count"],
-            "scene_reliability": result["scene_reliability"],
-            "scene_reliability_score": result["scene_reliability_score"],
-            "scene_reliability_reasons": result["scene_reliability_reasons"],
-            "timing_seconds": result["timing_seconds"],
-            "timing_ms": result["timing_ms"],
-            "processing_profile": result["processing_profile"],
             "annotated_video_url": result["annotated_video_url"],
             "tracks": result["tracks"],
-            "qualified_tracks": result.get("qualified_tracks", []),
             "events": result["events"],
             "message": result["message"],
             "video_path": str(video_path),
@@ -283,77 +256,15 @@ def _summarize_result(result: dict[str, object]) -> dict[str, object]:
     tracks = _list_value(result.get("tracks"))
     events = _list_value(result.get("events"))
     frames_processed = result.get("frames_processed", 0)
-    qualified_subject_count = _int_value(
-        result.get("qualified_subject_count"),
-        default=sum(1 for track in tracks if isinstance(track, dict) and track.get("qualified") is True),
-    )
-    if qualified_subject_count == 0 and not any(
-        isinstance(track, dict) and "qualified" in track for track in tracks
-    ):
-        qualified_subject_count = len(tracks)
 
     return {
         "frames_processed": frames_processed if isinstance(frames_processed, int) else 0,
-        "frames_analyzed": _int_value(
-            result.get("frames_analyzed"),
-            default=_int_value(result.get("analyzed_frames_count"), default=0),
-        ),
-        "source_video_fps": _finite_number(result.get("source_video_fps"), result.get("fps")),
-        "source_fps": _finite_number(
-            result.get("source_fps"),
-            result.get("source_video_fps"),
-            result.get("fps"),
-        ),
-        "playback_fps": _finite_number(
-            result.get("playback_fps"),
-            result.get("source_video_fps"),
-            result.get("fps"),
-        ),
-        "cpu_analysis_throughput_fps": _finite_number(
-            result.get("cpu_analysis_throughput_fps"),
-            result.get("analysis_throughput_fps"),
-        ),
-        "analysis_throughput_fps": _finite_number(result.get("analysis_throughput_fps")),
-        "analysis_inference_throughput_fps": _finite_number(
-            result.get("analysis_inference_throughput_fps")
-        ),
-        "sampled_analysis_fps": _finite_number(result.get("sampled_analysis_fps")),
-        "effective_analysis_fps": _finite_number(
-            result.get("effective_analysis_fps"),
-            result.get("sampled_analysis_fps"),
-        ),
-        "end_to_end_processing_fps": _finite_number(
-            result.get("end_to_end_processing_fps"),
-            result.get("end_to_end_throughput_fps"),
-            result.get("processing_fps"),
-        ),
-        "end_to_end_throughput_fps": _finite_number(
-            result.get("end_to_end_throughput_fps"),
-            result.get("processing_fps"),
-        ),
         "processing_fps": _finite_number(result.get("processing_fps")),
-        "analysis_frame_stride": _int_value(result.get("analysis_frame_stride"), default=1),
-        "analysis_resolution_width": _int_value(result.get("analysis_resolution_width"), default=0),
-        "annotated_output_max_width": _int_value(
-            result.get("annotated_output_max_width"),
-            default=0,
-        ),
-        "analyzed_frames_count": _int_value(result.get("analyzed_frames_count"), default=0),
-        "raw_track_count": _int_value(result.get("raw_track_count"), default=len(tracks)),
-        "qualified_subject_count": qualified_subject_count,
-        "track_count": qualified_subject_count,
-        "tracks_count": qualified_subject_count,
+        "track_count": len(tracks),
+        "tracks_count": len(tracks),
         "confirmed_track_count": _confirmed_track_count(tracks),
-        "raw_event_count": _int_value(result.get("raw_event_count"), default=len(events)),
-        "mobility_event_count": _int_value(result.get("mobility_event_count"), default=len(events)),
-        "event_count": _int_value(result.get("mobility_event_count"), default=len(events)),
-        "events_count": _int_value(result.get("mobility_event_count"), default=len(events)),
-        "scene_reliability": _string_value(result.get("scene_reliability")),
-        "scene_reliability_reasons": (
-            result.get("scene_reliability_reasons")
-            if isinstance(result.get("scene_reliability_reasons"), list)
-            else []
-        ),
+        "event_count": len(events),
+        "events_count": len(events),
         "event_counts_by_type": _event_counts(events, "event_type"),
         "event_counts_by_severity": _event_counts(events, "severity"),
     }
@@ -390,106 +301,16 @@ def _normalize_result(result: dict[str, object]) -> dict[str, object]:
     frames_processed = _int_value(payload.get("frames_processed"), default=0)
     tracks = _normalize_tracks(payload.get("tracks"))
     events = _normalize_events(payload.get("events"))
-    qualified_tracks = [track for track in tracks if track.get("qualified") is True]
-    has_explicit_qualification = any("qualified" in track for track in tracks)
     fps = _finite_number(payload.get("fps")) or _finite_number(video_metadata.get("fps"))
-    source_video_fps = _finite_number(
-        payload.get("source_video_fps"),
-        payload.get("source_fps"),
-        fps,
-    )
-    playback_fps = _finite_number(
-        payload.get("playback_fps"),
-        payload.get("annotated_video_fps"),
-        source_video_fps,
-    )
-    analysis_throughput_fps = _finite_number(
-        payload.get("analysis_throughput_fps"),
-        payload.get("cpu_analysis_throughput_fps"),
-    )
-    cpu_analysis_throughput_fps = _finite_number(
-        payload.get("cpu_analysis_throughput_fps"),
-        analysis_throughput_fps,
-    )
-    analysis_inference_throughput_fps = _finite_number(
-        payload.get("analysis_inference_throughput_fps"),
-        payload.get("sampled_inference_throughput_fps"),
-    )
-    sampled_analysis_fps = _finite_number(
-        payload.get("sampled_analysis_fps"),
-        payload.get("effective_analysis_fps"),
-    )
-    effective_analysis_fps = _finite_number(
-        payload.get("effective_analysis_fps"),
-        sampled_analysis_fps,
-    )
-    end_to_end_throughput_fps = _finite_number(
-        payload.get("end_to_end_throughput_fps"),
-        payload.get("end_to_end_processing_fps"),
-        payload.get("processing_fps"),
-    )
-    end_to_end_processing_fps = _finite_number(
-        payload.get("end_to_end_processing_fps"),
-        end_to_end_throughput_fps,
-    )
-    analysis_frame_stride = _int_value(payload.get("analysis_frame_stride"), default=1)
-    analysis_resolution_width = _int_value(payload.get("analysis_resolution_width"), default=0)
-    annotated_output_max_width = _int_value(payload.get("annotated_output_max_width"), default=0)
-    analyzed_frames_count = _int_value(
-        payload.get("analyzed_frames_count"),
-        default=_int_value(payload.get("frames_analyzed"), default=0),
-    )
-    frames_analyzed = _int_value(
-        payload.get("frames_analyzed"),
-        default=analyzed_frames_count,
-    )
-    timing_seconds = payload.get("timing_seconds")
-    timing_ms = payload.get("timing_ms")
-    raw_track_count = _int_value(payload.get("raw_track_count"), default=len(tracks))
-    qualified_subject_count = _int_value(
-        payload.get("qualified_subject_count"),
-        default=(len(qualified_tracks) if has_explicit_qualification else len(tracks)),
-    )
-    raw_event_count = _int_value(payload.get("raw_event_count"), default=len(events))
-    mobility_event_count = _int_value(payload.get("mobility_event_count"), default=len(events))
 
     payload["status"] = _string_value(payload.get("status")) or "completed"
     payload["frames_processed"] = frames_processed
-    payload["frames_analyzed"] = frames_analyzed
-    payload["tracks_count"] = _int_value(payload.get("tracks_count"), default=qualified_subject_count)
-    payload["events_count"] = _int_value(payload.get("events_count"), default=mobility_event_count)
+    payload["tracks_count"] = _int_value(payload.get("tracks_count"), default=len(tracks))
+    payload["events_count"] = _int_value(payload.get("events_count"), default=len(events))
     payload["fps"] = fps
-    payload["source_fps"] = _finite_number(payload.get("source_fps"), source_video_fps)
-    payload["source_video_fps"] = source_video_fps
-    payload["playback_fps"] = playback_fps
-    payload["cpu_analysis_throughput_fps"] = cpu_analysis_throughput_fps
-    payload["analysis_throughput_fps"] = analysis_throughput_fps
-    payload["analysis_inference_throughput_fps"] = analysis_inference_throughput_fps
-    payload["effective_analysis_fps"] = effective_analysis_fps
-    payload["sampled_analysis_fps"] = sampled_analysis_fps
-    payload["end_to_end_processing_fps"] = end_to_end_processing_fps
-    payload["end_to_end_throughput_fps"] = end_to_end_throughput_fps
-    payload["processing_fps"] = _finite_number(payload.get("processing_fps"), end_to_end_throughput_fps)
-    payload["analysis_frame_stride"] = analysis_frame_stride if analysis_frame_stride else 1
-    payload["analysis_stride_mode"] = _string_value(payload.get("analysis_stride_mode")) or "configured"
-    payload["analysis_resolution_width"] = analysis_resolution_width
-    payload["annotated_output_max_width"] = annotated_output_max_width
-    payload["analyzed_frames_count"] = analyzed_frames_count
-    payload["raw_track_count"] = raw_track_count
-    payload["qualified_subject_count"] = qualified_subject_count
-    payload["raw_event_count"] = raw_event_count
-    payload["mobility_event_count"] = mobility_event_count
-    payload["scene_reliability"] = _string_value(payload.get("scene_reliability")) or "Unknown"
-    payload["scene_reliability_score"] = _finite_number(payload.get("scene_reliability_score"))
-    scene_reasons = payload.get("scene_reliability_reasons")
-    payload["scene_reliability_reasons"] = scene_reasons if isinstance(scene_reasons, list) else []
-    payload["timing_seconds"] = timing_seconds if isinstance(timing_seconds, dict) else {}
-    payload["timing_ms"] = timing_ms if isinstance(timing_ms, dict) else {}
-    processing_profile = payload.get("processing_profile")
-    payload["processing_profile"] = processing_profile if isinstance(processing_profile, dict) else {}
+    payload["processing_fps"] = _finite_number(payload.get("processing_fps"))
     payload["annotated_video_url"] = _string_value(payload.get("annotated_video_url"))
     payload["tracks"] = tracks
-    payload["qualified_tracks"] = qualified_tracks if has_explicit_qualification else tracks
     payload["events"] = events
     payload["message"] = _string_value(payload.get("message"))
     return payload
@@ -562,7 +383,6 @@ def _normalize_events(value: object) -> list[dict[str, object]]:
         event = dict(item)
         event_type = _event_type_label(_string_value(event.get("event_type")))
         time_seconds = _finite_number(event.get("time_seconds"), event.get("timestamp_s"))
-        track_id = _int_value(event.get("track_id"), default=0)
         description = (
             _string_value(event.get("description"))
             or _string_value(event.get("reason"))
@@ -572,7 +392,6 @@ def _normalize_events(value: object) -> list[dict[str, object]]:
 
         event["time_seconds"] = time_seconds if time_seconds is not None else 0.0
         event["timestamp_s"] = time_seconds if time_seconds is not None else 0.0
-        event["track_id"] = track_id if track_id is not None else 0
         event["event_type"] = event_type
         event["description"] = description
         event["reason"] = description
@@ -584,44 +403,28 @@ def _normalize_events(value: object) -> list[dict[str, object]]:
 
 def _event_type_label(value: str | None) -> str:
     labels = {
-        "low_mobility_speed": "Slow walking",
-        "prolonged_dwell": "Movement anomaly",
-        "high_position_variance": "Abrupt trajectory change",
-        "Slow Walking": "Slow walking",
-        "Prolonged Stop": "Movement anomaly",
-        "Tracking Instability": "Abrupt trajectory change",
-        "Subject leaving frame": "Track ended near frame boundary",
+        "low_mobility_speed": "Slow Walking",
+        "prolonged_dwell": "Prolonged Stop",
+        "high_position_variance": "Tracking Instability",
     }
     if value is None:
-        return "Movement anomaly"
+        return "Tracking Instability"
     return labels.get(value, value)
 
 
 def _default_event_description(event_type: str) -> str:
     descriptions = {
-        "Slow walking": "Slow, consistent walking pattern observed.",
-        "Movement anomaly": "Movement anomaly detected; review in context.",
+        "Slow Walking": "Reduced movement speed detected.",
+        "Prolonged Stop": "Prolonged stop detected.",
         "Direction Change": "Direction change detected.",
-        "Abrupt trajectory change": "Abrupt trajectory change detected.",
-        "Track ended near frame boundary": "Track ended near frame boundary.",
-        "Insufficient visual evidence": "Not enough visual evidence for a strong conclusion.",
-        "Camera motion uncertainty": "Camera motion may affect mobility interpretation.",
+        "Tracking Instability": "Unstable tracking movement detected.",
         "Assistance Proximity": "Assistance proximity detected.",
-        "Fall-like motion event": "Fall-like motion evidence detected; requires review.",
     }
     return descriptions.get(event_type, "Mobility event detected.")
 
 
 def _severity_value(value: object) -> str:
-    if isinstance(value, str) and value.lower() in {
-        "low",
-        "normal",
-        "medium",
-        "high",
-        "review_needed",
-        "insufficient_evidence",
-        "uncertain",
-    }:
+    if isinstance(value, str) and value.lower() in {"low", "medium", "high"}:
         return value.lower()
     return "low"
 

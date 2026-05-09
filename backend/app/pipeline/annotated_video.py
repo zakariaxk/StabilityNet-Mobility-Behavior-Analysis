@@ -66,7 +66,7 @@ class AnnotatedVideoWriter:
         self._max_rendered_labels = max(1, max_rendered_labels)
         self._output_max_width = output_max_width
         self._track_centers: dict[int, list[tuple[int, int]]] = defaultdict(list)
-        self._recent_status_until_s: dict[int, tuple[str, float]] = {}
+        self._recent_status_until_s: dict[int, tuple[str, str, float]] = {}
         self.transcode_seconds: float = 0.0
 
     def __enter__(self) -> "AnnotatedVideoWriter":
@@ -142,7 +142,18 @@ class AnnotatedVideoWriter:
                 timestamp_s=timestamp_s,
             )
             color = _risk_color(risk_tone)
-            state = _motion_state(observation=observation, features=features, config=self._behavior_config)
+            primary_label = _status_label(
+                risk_tone,
+                self._recent_status_until_s.get(observation.track_id),
+                timestamp_s,
+            )
+            state = _motion_state(
+                observation=observation,
+                features=features,
+                config=self._behavior_config,
+                recent_status=self._recent_status_until_s.get(observation.track_id),
+                timestamp_s=timestamp_s,
+            )
             self._append_track_center(observation.track_id, observation.center)
             _draw_trajectory(
                 annotated_frame,
@@ -156,7 +167,7 @@ class AnnotatedVideoWriter:
                     bbox=observation.bbox,
                     color=color,
                     text_color=_label_text_color(risk_tone),
-                    line_primary=f"Subject {observation.track_id} | {_status_label(risk_tone)}",
+                    line_primary=f"Subject {observation.track_id} | {primary_label}",
                     line_secondary=f"Conf {observation.confidence:.2f} | {state}",
                     style=overlay_style,
                     occupied_labels=occupied_labels,
@@ -321,20 +332,34 @@ class AnnotatedVideoWriter:
     def _update_recent_events(self, events: list[BehaviorEvent], timestamp_s: float) -> None:
         for event in events:
             severity = event.severity.lower()
+            event_label = event.event_type
             if severity == "high":
-                self._recent_status_until_s[event.track_id] = ("high", timestamp_s + 3.0)
+                self._recent_status_until_s[event.track_id] = (
+                    "high",
+                    event_label,
+                    timestamp_s + 3.0,
+                )
             elif severity == "insufficient_evidence":
                 self._recent_status_until_s[event.track_id] = (
                     "insufficient_evidence",
+                    event_label,
                     timestamp_s + 3.0,
                 )
             elif severity in {"review_needed", "uncertain"}:
-                self._recent_status_until_s[event.track_id] = ("review_needed", timestamp_s + 3.0)
+                self._recent_status_until_s[event.track_id] = (
+                    "review_needed",
+                    event_label,
+                    timestamp_s + 3.0,
+                )
             elif severity == "medium":
-                self._recent_status_until_s[event.track_id] = ("medium", timestamp_s + 2.0)
+                self._recent_status_until_s[event.track_id] = (
+                    "medium",
+                    event_label,
+                    timestamp_s + 2.0,
+                )
         stale_ids = [
             track_id
-            for track_id, (_status, until_s) in self._recent_status_until_s.items()
+            for track_id, (_status, _label, until_s) in self._recent_status_until_s.items()
             if until_s < timestamp_s
         ]
         for track_id in stale_ids:
@@ -345,7 +370,7 @@ def _select_label_track_ids(
     *,
     observations: list[TrackObservation],
     frame_features: dict[int, BehaviorFeatures],
-    recent_status: dict[int, tuple[str, float]],
+    recent_status: dict[int, tuple[str, str, float]],
     timestamp_s: float,
     max_labels: int,
     config: BehaviorConfig,
@@ -354,7 +379,7 @@ def _select_label_track_ids(
     for observation in observations:
         features = frame_features.get(observation.track_id)
         status = recent_status.get(observation.track_id)
-        status_name = status[0] if status is not None and timestamp_s <= status[1] else ""
+        status_name = status[0] if status is not None and timestamp_s <= status[2] else ""
         priority = 100.0
         if status_name == "high":
             priority = 0.0
@@ -505,6 +530,16 @@ def _draw_labeled_box(
         text_thickness,
         cv.LINE_AA,
     )
+    cv.putText(
+        frame,
+        line_secondary,
+        (label_x + label_padding, secondary_y),
+        font,
+        secondary_scale,
+        text_color,
+        text_thickness,
+        cv.LINE_AA,
+    )
     return True
 
 
@@ -546,16 +581,6 @@ def _rects_overlap(
         or right[2] + 4 <= left[0]
         or left[3] + 4 <= right[1]
         or right[3] + 4 <= left[1]
-    )
-    cv.putText(
-        frame,
-        line_secondary,
-        (label_x + label_padding, secondary_y),
-        font,
-        secondary_scale,
-        text_color,
-        text_thickness,
-        cv.LINE_AA,
     )
 
 
@@ -634,13 +659,13 @@ def _risk_tone(
     observation: TrackObservation,
     features: BehaviorFeatures | None,
     config: BehaviorConfig,
-    recent_status: tuple[str, float] | None,
+    recent_status: tuple[str, str, float] | None,
     frame_size: tuple[int, int],
     timestamp_s: float,
 ) -> str:
     # This is an explainable mobility risk indicator for annotation only, not diagnosis.
     rank = 0
-    if recent_status is not None and timestamp_s <= recent_status[1]:
+    if recent_status is not None and timestamp_s <= recent_status[2]:
         status_rank = _status_rank(recent_status[0])
         rank = max(rank, status_rank)
 
@@ -658,14 +683,7 @@ def _risk_tone(
     if features is None:
         return _rank_to_status(rank)
 
-    fall_like = (
-        features.recent_vertical_delta_px >= 28.0
-        and features.bbox_height_change_ratio >= 0.28
-        and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25
-    )
-    if fall_like:
-        rank = max(rank, _status_rank("high"))
-    elif features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25:
+    if features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25:
         rank = max(rank, _status_rank("review_needed"))
 
     if features.dwell_time_s >= config.dwell_time_threshold_s * 1.25:
@@ -685,7 +703,16 @@ def _motion_state(
     observation: TrackObservation,
     features: BehaviorFeatures | None,
     config: BehaviorConfig,
+    recent_status: tuple[str, str, float] | None,
+    timestamp_s: float,
 ) -> str:
+    if recent_status is not None and timestamp_s <= recent_status[2]:
+        if recent_status[0] == "high":
+            return "review required"
+        if recent_status[0] in {"review_needed", "medium"}:
+            return "review suggested"
+        if recent_status[0] == "insufficient_evidence":
+            return "limited evidence"
     if not observation.is_confirmed:
         return "acquiring"
     if features is None:
@@ -741,9 +768,20 @@ def _label_text_color(risk_tone: str) -> tuple[int, int, int]:
     return (245, 245, 245)
 
 
-def _status_label(status: str) -> str:
+def _status_label(
+    status: str,
+    recent_status: tuple[str, str, float] | None,
+    timestamp_s: float,
+) -> str:
+    if (
+        recent_status is not None
+        and timestamp_s <= recent_status[2]
+        and recent_status[0] == "high"
+        and recent_status[1]
+    ):
+        return recent_status[1]
     if status == "high":
-        return "Fall-like Motion"
+        return "Fall-like motion event"
     if status == "medium":
         return "Review Needed"
     if status == "review_needed":

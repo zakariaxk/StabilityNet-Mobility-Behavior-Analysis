@@ -172,12 +172,12 @@ export default function StabilityNetPage() {
       null,
     [events, selectedEventKey]
   );
-  const throughputMetrics = useMemo(
-    () => buildThroughputMetrics(analysis),
+  const summaryMetrics = useMemo(
+    () => buildSummaryMetrics(analysis),
     [analysis]
   );
-  const optionalMetrics = useMemo(
-    () => buildOptionalMetrics(analysis),
+  const diagnosticMetrics = useMemo(
+    () => buildDiagnosticMetrics(analysis),
     [analysis]
   );
 
@@ -351,8 +351,8 @@ export default function StabilityNetPage() {
             framesProcessed={framesProcessed}
             trackCount={trackCount}
             eventCount={eventCount}
-            optionalMetrics={optionalMetrics}
-            throughputMetrics={throughputMetrics}
+            summaryMetrics={summaryMetrics}
+            diagnosticMetrics={diagnosticMetrics}
           />
 
           <div className={`results-grid${hasAnalysisResult ? " results-grid--analyzed" : ""}`}>
@@ -639,21 +639,26 @@ function SummaryCards({
   framesProcessed,
   trackCount,
   eventCount,
-  optionalMetrics,
-  throughputMetrics
+  summaryMetrics,
+  diagnosticMetrics
 }: {
   status: string;
   framesProcessed: number;
   trackCount: number;
   eventCount: number;
-  optionalMetrics: MetricItem[];
-  throughputMetrics: MetricItem[];
+  summaryMetrics: MetricItem[];
+  diagnosticMetrics: MetricItem[];
 }) {
   return (
     <section className="panel summary-panel" id="results" aria-labelledby="summary-title">
       <h2 id="summary-title">3. Analysis Summary</h2>
-      <div className="metric-grid">
-        <MetricCard icon={<ActivityIcon />} label="Status" value={status} />
+      <div className="metric-grid metric-grid--primary">
+        <MetricCard
+          className="metric-card--status"
+          icon={<ActivityIcon />}
+          label="Status"
+          value={status}
+        />
         <MetricCard
           icon={<FilmIcon />}
           label="Frames Processed"
@@ -669,15 +674,7 @@ function SummaryCards({
           label="Mobility Events"
           value={eventCount.toLocaleString()}
         />
-        {optionalMetrics.map((metric) => (
-          <MetricCard
-            key={metric.label}
-            icon={metric.icon}
-            label={metric.label}
-            value={metric.value}
-          />
-        ))}
-        {throughputMetrics.map((metric) => (
+        {summaryMetrics.map((metric) => (
           <MetricCard
             key={metric.label}
             icon={metric.icon}
@@ -686,27 +683,50 @@ function SummaryCards({
           />
         ))}
       </div>
+      <DiagnosticsSection metrics={diagnosticMetrics} />
     </section>
   );
 }
 
 function MetricCard({
+  className,
   icon,
   label,
   value
 }: {
+  className?: string;
   icon: ReactNode;
   label: string;
   value: string;
 }) {
   return (
-    <div className="metric-card">
+    <div className={`metric-card${className ? ` ${className}` : ""}`}>
       <span className="metric-icon">{icon}</span>
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
+      <div className="metric-copy">
+        <span className="metric-label">{label}</span>
+        <strong className="metric-value">{value}</strong>
       </div>
     </div>
+  );
+}
+
+function DiagnosticsSection({ metrics }: { metrics: MetricItem[] }) {
+  if (metrics.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="diagnostics-panel">
+      <summary>Diagnostics</summary>
+      <dl className="diagnostics-grid">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="diagnostic-row">
+            <dt>{metric.label}</dt>
+            <dd>{metric.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }
 
@@ -1086,7 +1106,7 @@ function EmptyState({ title, body }: { title: string; body: string }) {
 }
 
 type MetricItem = {
-  icon: ReactNode;
+  icon?: ReactNode;
   label: string;
   value: string;
 };
@@ -1135,33 +1155,22 @@ function severityPriority(event: BehaviorEvent): number {
   return 85;
 }
 
-function buildThroughputMetrics(analysis: AnalysisRecord | null): MetricItem[] {
+function buildSummaryMetrics(analysis: AnalysisRecord | null): MetricItem[] {
   if (!analysis) {
     return [];
   }
 
-  // Keep source/playback timing separate from analysis throughput so FPS claims stay honest.
   return [
     {
-      icon: <GaugeIcon />,
-      label: "Source Video FPS",
-      value: formatOptionalDecimal(
-        readAnalysisMetric(analysis, ["source_video_fps", "source_fps", "fps"])
-      )
+      icon: <ShieldIcon />,
+      label: "Scene Reliability",
+      value:
+        readAnalysisText(analysis, ["scene_reliability"]) ??
+        "Unavailable"
     },
     {
       icon: <GaugeIcon />,
-      label: "CPU Analysis FPS",
-      value: formatOptionalDecimal(
-        readAnalysisMetric(analysis, [
-          "cpu_analysis_throughput_fps",
-          "analysis_throughput_fps"
-        ])
-      )
-    },
-    {
-      icon: <GaugeIcon />,
-      label: "End-to-End Processing FPS",
+      label: "End-to-End FPS",
       value: formatOptionalDecimal(
         readAnalysisMetric(analysis, [
           "end_to_end_processing_fps",
@@ -1172,72 +1181,75 @@ function buildThroughputMetrics(analysis: AnalysisRecord | null): MetricItem[] {
     },
     {
       icon: <GaugeIcon />,
-      label: "Effective Analysis FPS",
+      label: "CPU FPS",
       value: formatOptionalDecimal(
         readAnalysisMetric(analysis, [
-          "effective_analysis_fps",
-          "sampled_analysis_fps",
-          "source_video_fps"
+          "cpu_analysis_throughput_fps",
+          "analysis_throughput_fps"
         ])
       )
     }
   ];
 }
 
-function buildOptionalMetrics(analysis: AnalysisRecord | null): MetricItem[] {
+function buildDiagnosticMetrics(analysis: AnalysisRecord | null): MetricItem[] {
   if (!analysis) {
     return [];
   }
 
   const metrics = [
     {
-      icon: <ShieldIcon />,
-      label: "Scene Reliability",
-      value: readAnalysisText(analysis, [
-        "scene_reliability"
-      ])
-    },
-    {
-      icon: <FilmIcon />,
       label: "Analyzed Frames",
+      value: readAnalysisMetric(analysis, ["frames_analyzed", "analyzed_frames_count"])
+    },
+    {
+      label: "Source Video FPS",
+      value: readAnalysisMetric(analysis, ["source_video_fps", "source_fps", "fps"])
+    },
+    {
+      label: "Effective Analysis FPS",
       value: readAnalysisMetric(analysis, [
-        "frames_analyzed",
-        "analyzed_frames_count"
+        "effective_analysis_fps",
+        "sampled_analysis_fps"
       ])
     },
     {
-      icon: <ActivityIcon />,
-      label: "Tracking Confidence",
-      value: readAnalysisMetric(analysis, [
-        "tracking_confidence",
-        "average_tracking_confidence",
-        "avg_tracking_confidence"
-      ])
+      label: "Raw Tracks",
+      value: readAnalysisMetric(analysis, ["raw_track_count"])
     },
     {
-      icon: <ShieldIcon />,
-      label: "Mobility Stability",
-      value: readAnalysisMetric(analysis, [
-        "mobility_stability",
-        "path_stability",
-        "stability_score"
-      ])
+      label: "Decode Time (ms)",
+      value: readAnalysisMetric(analysis, ["decode_time_ms"])
     },
     {
-      icon: <ChartIcon />,
-      label: "Gait Variability",
-      value: readAnalysisMetric(analysis, [
-        "gait_variability",
-        "gait_variability_score",
-        "stride_variability"
-      ])
+      label: "Inference Time (ms)",
+      value: readAnalysisMetric(analysis, ["inference_time_ms"])
+    },
+    {
+      label: "Tracking Time (ms)",
+      value: readAnalysisMetric(analysis, ["tracking_time_ms"])
+    },
+    {
+      label: "Event Time (ms)",
+      value: readAnalysisMetric(analysis, ["event_time_ms"])
+    },
+    {
+      label: "Annotation Time (ms)",
+      value: readAnalysisMetric(analysis, ["annotation_time_ms"])
+    },
+    {
+      label: "Encode Time (ms)",
+      value: readAnalysisMetric(analysis, ["encode_time_ms"])
+    },
+    {
+      label: "Total Time (ms)",
+      value: readAnalysisMetric(analysis, ["total_time_ms"])
     }
   ];
 
   return metrics
     .filter((metric) => metric.value !== undefined)
     .map((metric) => ({
-      icon: metric.icon,
       label: metric.label,
       value:
         typeof metric.value === "number"

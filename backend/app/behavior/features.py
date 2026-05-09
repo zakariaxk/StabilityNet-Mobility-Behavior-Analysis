@@ -22,6 +22,9 @@ class BehaviorFeatures:
     recent_vertical_delta_px: float = 0.0
     vertical_speed_px_s: float = 0.0
     bbox_height_change_ratio: float = 0.0
+    bbox_width_change_ratio: float = 0.0
+    recent_aspect_ratio: float = 0.0
+    bbox_aspect_ratio_change: float = 0.0
     direction_changes: int = 0
 
     def to_dict(self) -> dict[str, bool | float | int]:
@@ -37,6 +40,9 @@ class BehaviorFeatures:
             "recent_vertical_delta_px": self.recent_vertical_delta_px,
             "vertical_speed_px_s": self.vertical_speed_px_s,
             "bbox_height_change_ratio": self.bbox_height_change_ratio,
+            "bbox_width_change_ratio": self.bbox_width_change_ratio,
+            "recent_aspect_ratio": self.recent_aspect_ratio,
+            "bbox_aspect_ratio_change": self.bbox_aspect_ratio_change,
             "direction_changes": self.direction_changes,
         }
 
@@ -58,6 +64,9 @@ def extract_features(history: TrackHistory, config: BehaviorConfig) -> BehaviorF
         recent_vertical_delta_px=_recent_vertical_delta(history.points),
         vertical_speed_px_s=_vertical_speed(history.points),
         bbox_height_change_ratio=_bbox_height_change_ratio(history.points),
+        bbox_width_change_ratio=_bbox_width_change_ratio(history.points),
+        recent_aspect_ratio=_recent_aspect_ratio(history.points),
+        bbox_aspect_ratio_change=_bbox_aspect_ratio_change(history.points),
         direction_changes=_direction_changes(window_points),
     )
 
@@ -119,7 +128,7 @@ def _position_variance(points: list[TrackPoint]) -> float:
 def _recent_vertical_delta(points: list[TrackPoint]) -> float:
     if len(points) < 2:
         return 0.0
-    previous = points[-2]
+    previous = _recent_reference_point(points)
     current = points[-1]
     return current.center[1] - previous.center[1]
 
@@ -127,7 +136,7 @@ def _recent_vertical_delta(points: list[TrackPoint]) -> float:
 def _vertical_speed(points: list[TrackPoint]) -> float:
     if len(points) < 2:
         return 0.0
-    previous = points[-2]
+    previous = _recent_reference_point(points)
     current = points[-1]
     elapsed_s = max(0.0, current.timestamp_s - previous.timestamp_s)
     if elapsed_s == 0:
@@ -138,10 +147,36 @@ def _vertical_speed(points: list[TrackPoint]) -> float:
 def _bbox_height_change_ratio(points: list[TrackPoint]) -> float:
     if len(points) < 2:
         return 0.0
-    previous = points[-2]
+    previous = _recent_reference_point(points)
     current = points[-1]
     baseline = max(1.0, previous.bbox_height)
-    return abs(current.bbox_height - previous.bbox_height) / baseline
+    return max(0.0, previous.bbox_height - current.bbox_height) / baseline
+
+
+def _bbox_width_change_ratio(points: list[TrackPoint]) -> float:
+    if len(points) < 2:
+        return 0.0
+    previous = _recent_reference_point(points)
+    current = points[-1]
+    baseline = max(1.0, previous.bbox_width)
+    return max(0.0, current.bbox_width - previous.bbox_width) / baseline
+
+
+def _recent_aspect_ratio(points: list[TrackPoint]) -> float:
+    if not points:
+        return 0.0
+    current = points[-1]
+    return current.bbox_width / max(1.0, current.bbox_height)
+
+
+def _bbox_aspect_ratio_change(points: list[TrackPoint]) -> float:
+    if len(points) < 2:
+        return 0.0
+    previous = _recent_reference_point(points)
+    current = points[-1]
+    previous_ratio = previous.bbox_width / max(1.0, previous.bbox_height)
+    current_ratio = current.bbox_width / max(1.0, current.bbox_height)
+    return max(0.0, current_ratio - previous_ratio)
 
 
 def _direction_changes(points: list[TrackPoint]) -> int:
@@ -173,3 +208,14 @@ def _direction_changes(points: list[TrackPoint]) -> int:
 
 def _distance(left: tuple[float, float], right: tuple[float, float]) -> float:
     return hypot(left[0] - right[0], left[1] - right[1])
+
+
+def _recent_reference_point(points: list[TrackPoint]) -> TrackPoint:
+    if len(points) < 2:
+        return points[-1]
+
+    current = points[-1]
+    for point in reversed(points[:-1]):
+        if current.timestamp_s - point.timestamp_s >= 0.24:
+            return point
+    return points[-2]

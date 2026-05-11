@@ -119,9 +119,12 @@ def _position_variance(points: list[TrackPoint]) -> float:
 def _recent_vertical_delta(points: list[TrackPoint]) -> float:
     if len(points) < 2:
         return 0.0
-    previous = points[-2]
-    current = points[-1]
-    return current.center[1] - previous.center[1]
+    if len(points) == 2:
+        return points[-1].center[1] - points[-2].center[1]
+    # Average last two frame-to-frame deltas to reduce single-frame jitter noise.
+    delta1 = points[-1].center[1] - points[-2].center[1]
+    delta2 = points[-2].center[1] - points[-3].center[1]
+    return (delta1 + delta2) / 2.0
 
 
 def _vertical_speed(points: list[TrackPoint]) -> float:

@@ -32,6 +32,8 @@ class EventScoringTests(unittest.TestCase):
         self.assertTrue(all(event.feature_snapshot["track_id"] == 7 for event in events))
 
     def test_high_severity_requires_strong_motion_evidence(self) -> None:
+        # Brisk steady walking: variance=1600 is below the new 2.8x review threshold (2520),
+        # no fall signals, no deceleration pattern → no events emitted.
         features = BehaviorFeatures(
             track_id=4,
             observations=16,
@@ -45,8 +47,7 @@ class EventScoringTests(unittest.TestCase):
 
         events = EventScorer(BehaviorConfig()).score(features, timestamp_s=4.0)
 
-        self.assertEqual([event.event_type for event in events], ["Abrupt trajectory change"])
-        self.assertEqual(events[0].severity, "review_needed")
+        self.assertEqual(events, [])
 
     def test_ignores_unconfirmed_or_short_tracks(self) -> None:
         scorer = EventScorer(BehaviorConfig(min_track_duration_s=2.0))

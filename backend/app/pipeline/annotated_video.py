@@ -663,9 +663,19 @@ def _risk_tone(
         and features.bbox_height_change_ratio >= 0.28
         and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25
     )
+    # Postural transition: subject decelerating from walking to a near-stop (sit/stand assist).
+    # Requires prior motion and significant slowdown, but is not chaotic enough to be fall-like.
+    postural_transition = (
+        not fall_like
+        and features.mean_speed_px_s >= config.slow_speed_threshold_px_s * 1.4
+        and features.recent_speed_px_s <= config.slow_speed_threshold_px_s * 0.55
+        and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 0.3
+    )
     if fall_like:
         rank = max(rank, _status_rank("high"))
-    elif features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.7:
+    elif postural_transition:
+        rank = max(rank, _status_rank("medium"))
+    elif features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 2.8:
         rank = max(rank, _status_rank("review_needed"))
 
     if features.dwell_time_s >= config.dwell_time_threshold_s * 1.25:
@@ -673,7 +683,7 @@ def _risk_tone(
     elif features.dwell_time_s >= config.dwell_time_threshold_s:
         rank = max(rank, _status_rank("review_needed"))
 
-    if features.observations < 3 and observation.confidence < 0.45:
+    if not observation.is_confirmed and observation.confidence < 0.40:
         rank = max(rank, _status_rank("insufficient_evidence"))
 
     return _rank_to_status(rank)
@@ -743,12 +753,12 @@ def _status_label(status: str) -> str:
     if status == "high":
         return "High Mobility Risk Indicator"
     if status == "medium":
-        return "Tracking Instability"
+        return "Postural Transition Detected"
     if status == "review_needed":
-        return "Tracking Instability"
+        return "Movement Under Review"
     if status == "insufficient_evidence":
         return "Insufficient Evidence"
-    return "Stable"
+    return "Stable Gait"
 
 
 def _bbox_near_boundary(

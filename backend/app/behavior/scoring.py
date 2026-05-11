@@ -72,9 +72,23 @@ class EventScorer:
             )
 
         strong_risk_threshold = self.config.unstable_variance_threshold_px2 * 1.25
-        review_threshold = self.config.unstable_variance_threshold_px2 * 1.7
+        review_threshold = self.config.unstable_variance_threshold_px2 * 2.8
         should_emit_high = strong_risk and features.position_variance_px2 >= strong_risk_threshold
         should_emit_review = features.position_variance_px2 >= review_threshold
+
+        if _postural_transition(features, self.config) and not _fall_like_motion(features, self.config):
+            events.append(
+                self._event(
+                    features,
+                    timestamp_s,
+                    event_type="Postural Transition",
+                    score=0.55,
+                    severity="medium",
+                    reason="Controlled postural change detected; subject appears to be transitioning between positions.",
+                    confidence=observation_confidence,
+                    display_priority=30,
+                )
+            )
 
         if should_emit_high or should_emit_review:
             score = _ratio(
@@ -208,4 +222,13 @@ def _fall_like_motion(features: BehaviorFeatures, config: BehaviorConfig) -> boo
         features.recent_vertical_delta_px >= 28.0
         and features.bbox_height_change_ratio >= 0.28
         and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25
+    )
+
+
+def _postural_transition(features: BehaviorFeatures, config: BehaviorConfig) -> bool:
+    """Detect controlled deceleration from walking to a near-stop (sit/stand assist)."""
+    return bool(
+        features.mean_speed_px_s >= config.slow_speed_threshold_px_s * 1.4
+        and features.recent_speed_px_s <= config.slow_speed_threshold_px_s * 0.55
+        and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 0.3
     )

@@ -156,8 +156,8 @@ class AnnotatedVideoWriter:
                     bbox=observation.bbox,
                     color=color,
                     text_color=_label_text_color(risk_tone),
-                    line_primary=f"Subject {observation.track_id} | {_status_label(risk_tone)}",
-                    line_secondary=f"Conf {observation.confidence:.2f} | {state}",
+                    line_primary=f"#{observation.track_id}  {_status_label(risk_tone)}",
+                    line_secondary=f"conf {observation.confidence:.2f}  ·  {state}",
                     style=overlay_style,
                     occupied_labels=occupied_labels,
                 )
@@ -435,6 +435,21 @@ def _draw_box(frame: Any, bbox: BoundingBox, color: tuple[int, int, int], label:
     cv.putText(frame, label, (x1, text_y), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
 
+def _fill_rect_alpha(
+    frame: Any,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    color: tuple[int, int, int],
+    alpha: float = 0.80,
+) -> None:
+    cv = _require_cv2()
+    overlay = frame.copy()
+    cv.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
+    cv.addWeighted(overlay, alpha, frame, 1.0 - alpha, 0, frame)
+
+
 def _draw_labeled_box(
     frame: Any,
     bbox: BoundingBox,
@@ -492,7 +507,7 @@ def _draw_labeled_box(
     label_right = min(frame_width - 1, label_x + label_width)
     occupied_labels.append((label_x, label_top, label_right, label_bottom))
 
-    cv.rectangle(frame, (label_x, label_top), (label_right, label_bottom), color, -1)
+    _fill_rect_alpha(frame, label_x, label_top, label_right, label_bottom, color, alpha=0.78)
     primary_y = label_top + label_padding + primary_height
     secondary_y = primary_y + line_spacing + secondary_height
     cv.putText(
@@ -658,7 +673,16 @@ def _risk_tone(
     if features is None:
         return _rank_to_status(rank)
 
-    fall_like = (
+    # Posture-based fall: bbox went from standing-portrait to near-horizontal.
+    posture_collapse = (
+        features.bbox_aspect_ratio > 0.0
+        and features.baseline_aspect_ratio > 0.0
+        and features.bbox_aspect_ratio < 1.2
+        and features.baseline_aspect_ratio >= 1.6
+        and (features.baseline_aspect_ratio - features.bbox_aspect_ratio) >= 0.6
+        and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 0.25
+    )
+    fall_like = posture_collapse or (
         features.recent_vertical_delta_px >= 28.0
         and features.bbox_height_change_ratio >= 0.28
         and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25
@@ -698,7 +722,16 @@ def _motion_state(
         return "acquiring"
     if features is None:
         return "walking"
-    if features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.7:
+    # Posture collapse: bbox went from portrait to near-horizontal — person is fallen.
+    if (
+        features.bbox_aspect_ratio > 0.0
+        and features.baseline_aspect_ratio > 0.0
+        and features.bbox_aspect_ratio < 1.2
+        and features.baseline_aspect_ratio >= 1.6
+        and (features.baseline_aspect_ratio - features.bbox_aspect_ratio) >= 0.6
+    ):
+        return "fallen"
+    if features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 2.8:
         return "review"
     if features.dwell_time_s >= config.dwell_time_threshold_s:
         return "stopped"

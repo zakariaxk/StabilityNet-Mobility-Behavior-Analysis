@@ -23,6 +23,11 @@ class BehaviorFeatures:
     vertical_speed_px_s: float = 0.0
     bbox_height_change_ratio: float = 0.0
     direction_changes: int = 0
+    # Current bbox aspect ratio (height/width). < 1.0 = wider than tall = horizontal/fallen.
+    # A standing person is typically 1.6–3.0; a fallen person is < 1.0.
+    bbox_aspect_ratio: float = 0.0
+    # Mean aspect ratio from the first confirmed observations — the standing baseline.
+    baseline_aspect_ratio: float = 0.0
 
     def to_dict(self) -> dict[str, bool | float | int]:
         return {
@@ -38,6 +43,8 @@ class BehaviorFeatures:
             "vertical_speed_px_s": self.vertical_speed_px_s,
             "bbox_height_change_ratio": self.bbox_height_change_ratio,
             "direction_changes": self.direction_changes,
+            "bbox_aspect_ratio": self.bbox_aspect_ratio,
+            "baseline_aspect_ratio": self.baseline_aspect_ratio,
         }
 
 
@@ -59,6 +66,8 @@ def extract_features(history: TrackHistory, config: BehaviorConfig) -> BehaviorF
         vertical_speed_px_s=_vertical_speed(history.points),
         bbox_height_change_ratio=_bbox_height_change_ratio(history.points),
         direction_changes=_direction_changes(window_points),
+        bbox_aspect_ratio=_current_aspect_ratio(history.points),
+        baseline_aspect_ratio=_baseline_aspect_ratio(history.points),
     )
 
 
@@ -172,6 +181,23 @@ def _direction_changes(points: list[TrackPoint]) -> int:
         if cosine < -0.2:
             changes += 1
     return changes
+
+
+def _current_aspect_ratio(points: list[TrackPoint]) -> float:
+    if not points:
+        return 0.0
+    latest = points[-1]
+    return latest.bbox_height / max(1.0, latest.bbox_width)
+
+
+def _baseline_aspect_ratio(points: list[TrackPoint]) -> float:
+    """Mean aspect ratio of the first few confirmed observations (standing baseline)."""
+    confirmed = [p for p in points if p.is_confirmed]
+    if not confirmed:
+        return 0.0
+    sample = confirmed[: min(6, len(confirmed))]
+    ratios = [p.bbox_height / max(1.0, p.bbox_width) for p in sample]
+    return sum(ratios) / len(ratios)
 
 
 def _distance(left: tuple[float, float], right: tuple[float, float]) -> float:

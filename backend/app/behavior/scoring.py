@@ -210,18 +210,37 @@ def _strong_mobility_risk(features: BehaviorFeatures, config: BehaviorConfig) ->
         and features.bbox_height_change_ratio >= 0.02
         and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.6
     )
+    # Posture collapse: bbox went from standing-portrait to near-horizontal.
+    abrupt_posture_collapse = _posture_collapse(features, config)
     return bool(
         (abrupt_vertical_shift and abrupt_scale_change)
         or sudden_stop_after_motion
         or repeated_direction_changes
+        or abrupt_posture_collapse
     )
 
 
 def _fall_like_motion(features: BehaviorFeatures, config: BehaviorConfig) -> bool:
-    return bool(
+    motion_based = bool(
         features.recent_vertical_delta_px >= 28.0
         and features.bbox_height_change_ratio >= 0.28
         and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 1.25
+    )
+    # Posture-based: subject went from upright (portrait bbox) to collapsed (square/landscape).
+    posture_based = _posture_collapse(features, config)
+    return motion_based or posture_based
+
+
+def _posture_collapse(features: BehaviorFeatures, config: BehaviorConfig) -> bool:
+    """True when the bbox has shifted from a standing-portrait shape to near-horizontal."""
+    if features.bbox_aspect_ratio <= 0.0 or features.baseline_aspect_ratio <= 0.0:
+        return False
+    drop = features.baseline_aspect_ratio - features.bbox_aspect_ratio
+    return bool(
+        features.bbox_aspect_ratio < 1.2          # currently nearly square or landscape
+        and features.baseline_aspect_ratio >= 1.6  # was clearly standing upright
+        and drop >= 0.6                            # dropped significantly from baseline
+        and features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 0.25
     )
 
 

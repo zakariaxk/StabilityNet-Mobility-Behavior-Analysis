@@ -157,7 +157,7 @@ class AnnotatedVideoWriter:
                     color=color,
                     text_color=_label_text_color(risk_tone),
                     line_primary=f"#{observation.track_id}  {_status_label(risk_tone)}",
-                    line_secondary=f"conf {observation.confidence:.2f}  ·  {state}",
+                    line_secondary=f"conf {observation.confidence:.2f}  |  {state}",
                     style=overlay_style,
                     occupied_labels=occupied_labels,
                 )
@@ -699,8 +699,6 @@ def _risk_tone(
         rank = max(rank, _status_rank("high"))
     elif postural_transition:
         rank = max(rank, _status_rank("medium"))
-    elif features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 2.8:
-        rank = max(rank, _status_rank("review_needed"))
 
     if features.dwell_time_s >= config.dwell_time_threshold_s * 1.25:
         rank = max(rank, _status_rank("medium"))
@@ -731,8 +729,6 @@ def _motion_state(
         and (features.baseline_aspect_ratio - features.bbox_aspect_ratio) >= 0.6
     ):
         return "fallen"
-    if features.position_variance_px2 >= config.unstable_variance_threshold_px2 * 2.8:
-        return "review"
     if features.dwell_time_s >= config.dwell_time_threshold_s:
         return "stopped"
     if features.recent_speed_px_s <= config.slow_speed_threshold_px_s:

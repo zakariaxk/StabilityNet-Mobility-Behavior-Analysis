@@ -6,6 +6,7 @@ import logging
 import math
 import time
 from datetime import UTC, datetime
+from typing import TypedDict
 
 from app.behavior.events import BehaviorEvent
 from app.behavior.features import BehaviorFeatures, extract_features
@@ -26,6 +27,20 @@ logger = logging.getLogger(__name__)
 
 class AnalysisPipelineError(RuntimeError):
     """Raised when analysis fails inside the per-frame pipeline."""
+
+
+class _SceneReliability(TypedDict):
+    category: str
+    score: float
+    reasons: list[str]
+
+
+class _FinalizedAnalysisPolicy(TypedDict):
+    qualified_tracks: list[dict[str, object]]
+    qualified_subject_count: int
+    scene_reliability: _SceneReliability
+    display_events: list[BehaviorEvent]
+    events_suppressed_count: int
 
 
 def analyze_video(request: AnalysisRequest) -> dict[str, object]:
@@ -218,9 +233,18 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         config=request.config.behavior,
     )
     raw_track_count = len(tracks)
-    merged_events = _merge_nearby_events(events)
-    event_payloads = [event.to_dict() for event in merged_events]
     raw_event_count = len(events)
+    policy = _finalize_analysis_policy(
+        tracks=tracks,
+        raw_events=events,
+        frames_processed=frames_processed,
+    )
+    qualified_tracks = policy["qualified_tracks"]
+    qualified_subject_count = int(policy["qualified_subject_count"])
+    display_events = policy["display_events"]
+    event_payloads = [event.to_dict() for event in display_events]
+    events_suppressed_count = int(policy["events_suppressed_count"])
+    scene_reliability = policy["scene_reliability"]
     end_to_end_seconds = time.perf_counter() - started_at
     analysis_throughput_fps = (
         frames_processed / frame_loop_seconds
@@ -270,11 +294,11 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         "analysis_resolution_width": request.config.detector.analysis_width,
         "annotated_output_max_width": request.config.annotated_output_max_width,
         "raw_track_count": raw_track_count,
-        "qualified_subject_count": raw_track_count,
+        "qualified_subject_count": qualified_subject_count,
         "tracks_count": raw_track_count,
         "confirmed_tracks_count": sum(1 for track in tracks if track.get("is_confirmed") is True),
         "raw_event_count": raw_event_count,
-        "events_suppressed_count": max(0, raw_event_count - len(event_payloads)),
+        "events_suppressed_count": events_suppressed_count,
         "mobility_event_count": len(event_payloads),
         "events_count": len(event_payloads),
         "fps": metadata.fps,
@@ -309,19 +333,19 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
             "end_to_end_processing_fps": end_to_end_throughput_fps,
             "effective_analysis_fps": effective_analysis_fps,
         },
-        "scene_reliability": "Unknown",
-        "scene_reliability_score": None,
-        "scene_reliability_reasons": [],
+        "scene_reliability": scene_reliability["category"],
+        "scene_reliability_score": scene_reliability["score"],
+        "scene_reliability_reasons": scene_reliability["reasons"],
         "annotated_video_url": annotated_video_url,
         "message": None,
         "frames": frame_summaries,
         "tracks": tracks,
-        "qualified_tracks": tracks,
+        "qualified_tracks": qualified_tracks,
         "events": event_payloads,
         "debug": {
             "raw_track_count": raw_track_count,
             "raw_event_count": raw_event_count,
-            "qualified_subject_count": raw_track_count,
+            "qualified_subject_count": qualified_subject_count,
             "analysis_frame_stride": analysis_frame_stride,
             "analysis_stride_mode": analysis_stride_mode,
             "analysis_resolution_width": request.config.detector.analysis_width,
@@ -335,7 +359,7 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
             "video_path": str(request.video_path),
             "frames_processed": frames_processed,
             "raw_track_count": raw_track_count,
-            "qualified_subject_count": raw_track_count,
+            "qualified_subject_count": qualified_subject_count,
             "events_count": len(event_payloads),
         },
     )
@@ -518,12 +542,40 @@ def _track_motion_state(feature_record: dict[str, object]) -> str:
     return "walking"
 
 
+def _finalize_analysis_policy(
+    *,
+    tracks: list[dict[str, object]],
+    raw_events: list[BehaviorEvent],
+    frames_processed: int,
+) -> _FinalizedAnalysisPolicy:
+    """Apply the production qualification, reliability, and display-event policy."""
+
+    qualified_tracks = [track for track in tracks if track.get("qualified") is True]
+    scene_reliability = _scene_reliability(
+        tracks=tracks,
+        raw_events=raw_events,
+        frames_processed=frames_processed,
+    )
+    display_events, events_suppressed_count = _display_events(
+        events=raw_events,
+        tracks=tracks,
+        scene_reliability=scene_reliability,
+    )
+    return {
+        "qualified_tracks": qualified_tracks,
+        "qualified_subject_count": len(qualified_tracks),
+        "scene_reliability": scene_reliability,
+        "display_events": display_events,
+        "events_suppressed_count": events_suppressed_count,
+    }
+
+
 def _scene_reliability(
     *,
     tracks: list[dict[str, object]],
     raw_events: list[BehaviorEvent],
     frames_processed: int,
-) -> dict[str, object]:
+) -> _SceneReliability:
     raw_track_count = len(tracks)
     qualified_count = sum(1 for track in tracks if track.get("qualified") is True)
     short_or_suppressed_count = raw_track_count - qualified_count
@@ -579,7 +631,7 @@ def _display_events(
     *,
     events: list[BehaviorEvent],
     tracks: list[dict[str, object]],
-    scene_reliability: dict[str, object],
+    scene_reliability: _SceneReliability,
 ) -> tuple[list[BehaviorEvent], int]:
     tracks_by_id = {
         int(track["track_id"]): track

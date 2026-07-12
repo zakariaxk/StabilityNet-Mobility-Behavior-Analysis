@@ -59,3 +59,19 @@ keeps the nano-size deployment profile while improving current speed and
 accuracy expectations. The existing detector wrapper and JSON output contract
 stay unchanged, and the CLI exposes `--detector-model` so local runs can compare
 other YOLO26 variants or custom `.pt` weights without changing code.
+
+## ADR-009: Make Reliability Policy Part Of Production Output
+
+Track qualification, scene reliability, and display-event suppression are one
+production post-processing step. Raw tracks and raw event counts remain
+available for debugging, while `qualified_tracks`, presented events, and
+reliability fields reflect the review policy. This prevents short or weak tracks
+from being presented as qualified subjects without hiding the underlying data.
+
+## ADR-010: Evaluate Events Before Retuning Heuristics
+
+StabilityNet uses a local event-level evaluation seam with one-to-one temporal
+matching, precision, recall, F1, false alarms per minute, and timing error. Major
+tracker or scoring changes should be justified against labeled held-out clips
+and synthetic invariance tests rather than tuned only to the four demo videos.
+These metrics evaluate prototype behavior and do not establish clinical validity.

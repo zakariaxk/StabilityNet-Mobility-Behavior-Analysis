@@ -24,6 +24,7 @@ import {
   sampleUnavailableMessage
 } from "@/lib/sampleVideos";
 import type { SampleVideo } from "@/lib/sampleVideos";
+import { severityPresentation } from "@/lib/analysisPresentation";
 
 const FALLBACK_ANALYSIS_ERROR =
   "Upload an MP4 file or select a sample video before running analysis.";
@@ -382,7 +383,7 @@ function Sidebar() {
         <WalkingIcon className="brand-icon" />
         <div>
           <strong>StabilityNet</strong>
-          <p>Video-based mobility risk indicator analysis</p>
+          <p>Mobility intelligence workspace</p>
         </div>
       </div>
 
@@ -390,14 +391,14 @@ function Sidebar() {
         <SidebarLink active href="#analysis" icon={<ChartIcon />} label="Analysis" />
         <SidebarLink href="#samples" icon={<FolderIcon />} label="Samples" />
         <SidebarLink href="#results" icon={<PanelIcon />} label="Results" />
-        <SidebarLink href="#pipeline" icon={<InfoIcon />} label="About" />
+        <SidebarLink href="#pipeline" icon={<InfoIcon />} label="Method" />
       </nav>
 
       <div className="prototype-card">
-        <strong>Research Prototype</strong>
+        <strong>Research use only</strong>
         <p>
-          This system analyzes uploaded videos to extract mobility patterns and
-          identify mobility risk indicators that require review.
+          Computer vision signals support review. They do not replace clinical
+          judgment.
         </p>
         <span>Not a medical device.</span>
       </div>
@@ -428,13 +429,11 @@ function Header({ health }: { health: HealthState }) {
   return (
     <header className="hero-header">
       <div className="hero-copy">
-        <h1>StabilityNet</h1>
+        <span className="hero-kicker">Motion review workspace</span>
+        <h1>See the movement.<br />Inspect the evidence.</h1>
         <p className="hero-subtitle">
-          Video-based mobility risk indicator analysis
-        </p>
-        <p className="hero-intro">
-          Upload a video or try a sample to analyze human motion, track
-          individuals, and detect mobility events that may require review.
+          Track people, review mobility events, and trace every signal back to
+          the annotated frame.
         </p>
       </div>
       <div className={`online-pill online-pill--${health.state}`}>
@@ -466,7 +465,10 @@ function UploadCard({
 }) {
   return (
     <section className="panel upload-panel" aria-labelledby="upload-title">
-      <h2 id="upload-title">1. Upload Video</h2>
+      <div className="panel-heading">
+        <h2 id="upload-title">Video source</h2>
+        <span>MP4 up to 500 MB</span>
+      </div>
       <label
         className={`dropzone${isDragging ? " dropzone--active" : ""}`}
         htmlFor="video-upload"
@@ -484,9 +486,9 @@ function UploadCard({
           onChange={onBrowse}
         />
         <UploadIcon className="dropzone-icon" />
-        <strong>Drag &amp; drop an MP4 file here</strong>
-        <span>or click to browse</span>
-        <small>Max file size: 500 MB • Format: MP4</small>
+        <strong>Drop a recording here</strong>
+        <span>Browse local files</span>
+        <small>MP4 format only</small>
         {fileName ? <em>{fileName}</em> : null}
       </label>
     </section>
@@ -504,7 +506,10 @@ function SampleVideos({
 }) {
   return (
     <section className="panel samples-panel" id="samples" aria-labelledby="samples-title">
-      <h2 id="samples-title">2. Or Try a Sample Video</h2>
+      <div className="panel-heading">
+        <h2 id="samples-title">Reference clips</h2>
+        <span>Select one to inspect</span>
+      </div>
       <div className="sample-grid">
         {SAMPLE_VIDEOS.map((sample) => {
           const isUnavailable = unavailableSampleIds.includes(sample.id);
@@ -531,7 +536,7 @@ function SampleVideos({
       </div>
       <p className="sample-note">
         <InfoIcon />
-        <span>Add MP4s locally with the documented sample filenames.</span>
+        <span>Samples use local files and never leave this machine.</span>
       </p>
     </section>
   );
@@ -635,7 +640,10 @@ function SummaryCards({
 }) {
   return (
     <section className="panel summary-panel" id="results" aria-labelledby="summary-title">
-      <h2 id="summary-title">3. Analysis Summary</h2>
+      <div className="panel-heading">
+        <h2 id="summary-title">Run telemetry</h2>
+        <span>Current analysis</span>
+      </div>
       <div className="metric-grid">
         <MetricCard icon={<ActivityIcon />} label="Status" value={status} />
         <MetricCard
@@ -722,8 +730,11 @@ function AnnotatedVideo({
       aria-labelledby="video-title"
     >
       <div className="artifact-heading">
-        <h2 id="video-title">4. Annotated Output</h2>
-        {hasResult ? <span>Primary Analysis View</span> : null}
+        <div>
+          <span className="artifact-kicker">Evidence viewer</span>
+          <h2 id="video-title">Annotated motion</h2>
+        </div>
+        {hasResult ? <span>Analysis ready</span> : <span>Awaiting run</span>}
       </div>
       <div className="video-frame">
         {videoUrl && !videoLoadError ? (
@@ -811,7 +822,9 @@ function EventMarkers({
     <div className="event-marker-strip" aria-label="Video event markers">
       <div className="event-marker-track">
         {timedEvents.map(({ event, index, key, timestamp }) => {
-          const severityTone = severityClass(readString(event, "severity") ?? "low");
+          const severityTone = severityPresentation(
+            readString(event, "severity") ?? ""
+          ).tone;
           const left = Math.min(100, Math.max(0, (timestamp / duration) * 100));
           const isSelected = selectedEventKey === key;
 
@@ -834,7 +847,7 @@ function EventMarkers({
           );
         })}
       </div>
-      <span>Mobility event markers</span>
+      <span>Event positions in source time</span>
     </div>
   );
 }
@@ -851,8 +864,8 @@ function TracksTable({
   return (
     <section className="panel table-panel" aria-labelledby="tracks-title">
       <div className="table-heading">
-        <h2 id="tracks-title">Tracked Subjects</h2>
-        <span>Total: {tracks.length.toLocaleString()}</span>
+        <h2 id="tracks-title">Subjects</h2>
+        <span>{tracks.length.toLocaleString()} tracked</span>
       </div>
       {tracks.length > 0 ? (
         <div className="subject-list">
@@ -875,7 +888,7 @@ function TracksTable({
                 <div>
                   <strong>Subject {track.id}</strong>
                   <span>
-                    {track.frames.toLocaleString()} frames • {track.motionSummary}
+                    {track.frames.toLocaleString()} frames / {track.motionSummary}
                   </span>
                 </div>
               </div>
@@ -924,8 +937,8 @@ function EventsTable({
   return (
     <section className="panel table-panel" aria-labelledby="events-title">
       <div className="table-heading">
-        <h2 id="events-title">Events Timeline</h2>
-        <span>Total: {events.length.toLocaleString()}</span>
+        <h2 id="events-title">Review queue</h2>
+        <span>{events.length.toLocaleString()} events</span>
       </div>
       {events.length > 0 ? (
         <div className="event-list">
@@ -961,7 +974,7 @@ function EventsTable({
                 </div>
                 <p>{description}</p>
                 <span>
-                  {timestamp}s • Track {event.track_id}
+                  {timestamp}s / Subject {event.track_id}
                 </span>
               </article>
             );
@@ -978,10 +991,10 @@ function EventsTable({
 }
 
 function SeverityBadge({ severity }: { severity: string }) {
-  const severityTone = severityClass(severity);
+  const presentation = severityPresentation(severity);
   return (
-    <span className={`severity severity--${severityTone}`}>
-      {capitalize(severityTone)}
+    <span className={`severity severity--${presentation.tone}`}>
+      {presentation.label}
     </span>
   );
 }
@@ -999,7 +1012,7 @@ function TrajectoryCell({ track, tone }: { track: TrackRow; tone: number }) {
 
 function Trajectory({ points, tone }: { points: TrackPoint[]; tone: number }) {
   if (points.length < 2) {
-    return <span className="trajectory-empty">–</span>;
+    return <span className="trajectory-empty">-</span>;
   }
 
   return (
@@ -1132,15 +1145,18 @@ function PipelineSection() {
       icon: <ChartIcon />
     },
     {
-      title: "Fall-Risk Indicators",
-      subtitle: "Identify risk events",
+      title: "Mobility Review",
+      subtitle: "Flag review events",
       icon: <ShieldIcon />
     }
   ];
 
   return (
     <section className="panel pipeline-panel" id="pipeline" aria-labelledby="pipeline-title">
-      <h2 id="pipeline-title">7. Analysis Pipeline</h2>
+      <div className="panel-heading">
+        <h2 id="pipeline-title">How the analysis runs</h2>
+        <span>Local processing pipeline</span>
+      </div>
       <div className="pipeline-steps">
         {steps.map((step, index) => (
           <div className="pipeline-item" key={step.title}>
@@ -1154,7 +1170,7 @@ function PipelineSection() {
         ))}
       </div>
       <div className="technical-metadata">
-        <span>Uploaded-video inference • YOLO26n • OpenCV • SORT tracking</span>
+        <span>Uploaded-video inference / YOLO26n / OpenCV / SORT tracking</span>
         <span>Research prototype. Not a medical device.</span>
       </div>
     </section>
@@ -1433,7 +1449,7 @@ function isFiniteNumber(value: unknown): value is number {
 
 function formatOptionalDecimal(value: number | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "–";
+    return "-";
   }
 
   return value >= 10 ? value.toFixed(1) : value.toFixed(2);
@@ -1442,7 +1458,7 @@ function formatOptionalDecimal(value: number | undefined): string {
 function formatMetricNumber(value: number | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? formatOptionalDecimal(value)
-    : "–";
+    : "-";
 }
 
 function humanizeStatus(value: string): string {
@@ -1484,17 +1500,6 @@ function eventCardKey(event: BehaviorEvent, index: number): string {
     readString(event, "event_id") ??
     `${readNumber(event, "track_id") ?? "na"}-${readString(event, "event_type") ?? "event"}-${index}`
   );
-}
-
-function severityClass(value: string): "low" | "medium" | "high" {
-  const normalized = value.toLowerCase();
-  if (normalized.includes("high") || normalized.includes("critical")) {
-    return "high";
-  }
-  if (normalized.includes("medium") || normalized.includes("moderate")) {
-    return "medium";
-  }
-  return "low";
 }
 
 function readRecord(

@@ -8,15 +8,18 @@ import type {
   SVGProps
 } from "react";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  AnalysisListItem,
   AnalysisProgress,
   AnalysisRecord,
   BehaviorEvent,
   TrackSummary,
   analysisVideoUrl,
   checkHealth,
+  getAnalysis,
+  listAnalyses,
   createAnalysis,
   pollAnalysis,
   uploadAnalysis
@@ -89,6 +92,29 @@ export default function StabilityNetPage() {
   const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
+  const [history, setHistory] = useState<AnalysisListItem[]>([]);
+
+  const refreshHistory = useCallback(() => {
+    listAnalyses(15)
+      .then((page) => setHistory(page.items))
+      .catch(() => setHistory([]));
+  }, []);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
+
+  const loadPastAnalysis = useCallback(async (analysisId: string) => {
+    setError(null);
+    try {
+      const record = await getAnalysis(analysisId);
+      setSelectedTrackId(null);
+      setSelectedEventKey(null);
+      setAnalysis(record);
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError));
+    }
+  }, []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -215,6 +241,7 @@ export default function StabilityNetPage() {
       setSelectedTrackId(null);
       setSelectedEventKey(null);
       setAnalysis(record);
+      refreshHistory();
       if (selectedSample) {
         setUnavailableSampleIds((sampleIds) =>
           sampleIds.filter((sampleId) => sampleId !== selectedSample.id)
@@ -284,7 +311,7 @@ export default function StabilityNetPage() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar history={history} onSelect={loadPastAnalysis} />
       <main className="main-content">
         <div className="content-inner">
           <Header health={health} />
@@ -374,7 +401,13 @@ export default function StabilityNetPage() {
   );
 }
 
-function Sidebar() {
+function Sidebar({
+  history,
+  onSelect
+}: {
+  history: AnalysisListItem[];
+  onSelect: (analysisId: string) => void;
+}) {
   return (
     <aside className="sidebar" aria-label="StabilityNet navigation">
       <div className="sidebar-brand">
@@ -391,6 +424,27 @@ function Sidebar() {
         <SidebarLink href="#results" icon={<PanelIcon />} label="Results" />
         <SidebarLink href="#pipeline" icon={<InfoIcon />} label="Method" />
       </nav>
+
+      {history.length > 0 ? (
+        <div className="sidebar-history">
+          <h3>Recent analyses</h3>
+          <ul>
+            {history.map((item) => (
+              <li key={item.analysis_id}>
+                <button type="button" onClick={() => onSelect(item.analysis_id)}>
+                  <span className="sidebar-history__name">
+                    {item.original_filename ?? item.analysis_id.slice(0, 8)}
+                  </span>
+                  <span className="sidebar-history__meta">
+                    {item.mobility_event_count ?? 0} events
+                    {item.top_severity ? ` · ${severityPresentation(item.top_severity).label}` : ""}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="prototype-card">
         <strong>Research use only</strong>

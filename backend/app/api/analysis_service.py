@@ -132,6 +132,13 @@ class AnalysisService:
             "status": "processing",
             "created_at": datetime.now(UTC).isoformat(),
             "progress": {"stage": "queued", "frames_processed": 0, "total_frames": 0, "percent": 0.0},
+            "frames_processed": 0,
+            "tracks_count": 0,
+            "events_count": 0,
+            "raw_track_count": 0,
+            "qualified_subject_count": 0,
+            "raw_event_count": 0,
+            "mobility_event_count": 0,
             "source": source,
             "video_path": str(video_path),
             "tracks": [],
@@ -180,6 +187,9 @@ class AnalysisService:
 
         future: Future[None] = _ANALYSIS_EXECUTOR.submit(task)
         self._jobs[analysis_id] = future
+        # Don't leak a Future per analysis for the life of the process. wait_for()
+        # tolerates a missing entry (a finished analysis is read back off disk).
+        future.add_done_callback(lambda _f: self._jobs.pop(analysis_id, None))
         return record
 
     def wait_for(self, analysis_id: str, timeout: float = 60.0) -> dict[str, object]:
@@ -228,6 +238,20 @@ class AnalysisService:
 
         return write_progress
 
+    def _existing_created_at(self, analysis_id: str) -> str:
+        """Keep the queue-time timestamp so list ordering reflects submission,
+        not completion. Falls back to now for the synchronous create() path,
+        which writes no pending record first."""
+
+        try:
+            prior = self.get(analysis_id)
+        except AnalysisNotFoundError:
+            return datetime.now(UTC).isoformat()
+        created = prior.get("created_at")
+        if isinstance(created, str) and created.strip():
+            return created
+        return datetime.now(UTC).isoformat()
+
     def _write_failed_record(self, analysis_id: str, exc: BaseException) -> None:
         try:
             record = self.get(analysis_id)
@@ -236,7 +260,15 @@ class AnalysisService:
         record["status"] = "failed"
         record["message"] = str(exc)
         record["error_kind"] = type(exc).__name__
-        record["progress"] = {"stage": "failed", "frames_processed": 0, "total_frames": 0, "percent": 0.0}
+        # Preserve whatever progress the run reached rather than snapping to 0 —
+        # the UI shouldn't jump backwards, and the last stage aids debugging.
+        prior = record.get("progress") if isinstance(record.get("progress"), dict) else {}
+        record["progress"] = {
+            "stage": "failed",
+            "frames_processed": int(prior.get("frames_processed") or 0),
+            "total_frames": int(prior.get("total_frames") or 0),
+            "percent": float(prior.get("percent") or 0.0),
+        }
         write_json(self._record_path(analysis_id), record)
 
     def create_from_upload(
@@ -362,7 +394,7 @@ class AnalysisService:
             "source": source,
             "summary": _summarize_result(result),
             "result": public_result,
-            "created_at": datetime.now(UTC).isoformat(),
+            "created_at": self._existing_created_at(analysis_id),
             "progress": {
                 "stage": "completed",
                 "frames_processed": int(result["frames_processed"] or 0),

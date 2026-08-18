@@ -231,6 +231,16 @@ python -m app.cli analyze \
   --detector-model yolo26s.pt
 ```
 
+### Pruning outputs
+
+Each analysis keeps a record, a result file, the uploaded source video and an
+annotated output. Nothing removed them, so `outputs/` had reached 1 GB.
+
+```bash
+python -m app.cli prune --keep 10 --dry-run   # show what would go
+python -m app.cli prune --keep 10
+```
+
 ### Environment Variables
 
 | Variable | Default | Description |

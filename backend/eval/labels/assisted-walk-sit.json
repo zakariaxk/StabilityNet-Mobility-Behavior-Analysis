@@ -1,0 +1,10 @@
+{
+  "clip": "samples/assisted-walk-sit.mp4",
+  "duration_s": 18.0,
+  "description": "An elderly person walks supported by two carers for ~11s, then is lowered into a chair around t=13s. A controlled transition, NOT a fall.",
+  "labelled_by": "frame inspection at 1 fps",
+  "positive": true,
+  "events": [
+    { "event_type": "Postural Transition", "track_id": 0, "timestamp_s": 13.0 }
+  ]
+}

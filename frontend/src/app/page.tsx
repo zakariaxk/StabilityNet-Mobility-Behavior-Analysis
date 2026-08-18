@@ -8,15 +8,20 @@ import type {
   SVGProps
 } from "react";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  AnalysisListItem,
+  AnalysisProgress,
   AnalysisRecord,
   BehaviorEvent,
   TrackSummary,
   analysisVideoUrl,
   checkHealth,
+  getAnalysis,
+  listAnalyses,
   createAnalysis,
+  pollAnalysis,
   uploadAnalysis
 } from "@/lib/stabilityNetApi";
 import {
@@ -24,17 +29,24 @@ import {
   sampleUnavailableMessage
 } from "@/lib/sampleVideos";
 import type { SampleVideo } from "@/lib/sampleVideos";
+import { severityPresentation } from "@/lib/analysisPresentation";
 
 const FALLBACK_ANALYSIS_ERROR =
   "Upload an MP4 file or select a sample video before running analysis.";
 
-const PROCESSING_STAGES = [
-  "Uploading video...",
-  "Running person detection...",
-  "Tracking subjects...",
-  "Analyzing motion events...",
-  "Preparing annotated output..."
-] as const;
+/**
+ * Labels for the stages the backend actually reports via record.progress.stage.
+ * This used to be a five-item list advanced by a 1800ms setInterval with no
+ * relationship to the backend at all, so on a slow clip it sat on the last
+ * label for minutes.
+ */
+const STAGE_LABELS: Record<string, string> = {
+  queued: "Queued...",
+  analyzing: "Running detection and tracking...",
+  encoding: "Encoding annotated video...",
+  finalizing: "Finalizing analysis...",
+  completed: "Complete"
+};
 
 type HealthState =
   | { state: "checking"; label: "Checking" }
@@ -77,9 +89,32 @@ export default function StabilityNetPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [processingStageIndex, setProcessingStageIndex] = useState(0);
+  const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
+  const [history, setHistory] = useState<AnalysisListItem[]>([]);
+
+  const refreshHistory = useCallback(() => {
+    listAnalyses(15)
+      .then((page) => setHistory(page.items))
+      .catch(() => setHistory([]));
+  }, []);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
+
+  const loadPastAnalysis = useCallback(async (analysisId: string) => {
+    setError(null);
+    try {
+      const record = await getAnalysis(analysisId);
+      setSelectedTrackId(null);
+      setSelectedEventKey(null);
+      setAnalysis(record);
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError));
+    }
+  }, []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -105,20 +140,6 @@ export default function StabilityNetPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isSubmitting) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      setProcessingStageIndex((currentIndex) =>
-        Math.min(currentIndex + 1, PROCESSING_STAGES.length - 1)
-      );
-    }, 1800);
-
-    return () => window.clearInterval(intervalId);
-  }, [isSubmitting]);
-
   const selectedSample = useMemo(
     () =>
       SAMPLE_VIDEOS.find((sample) => sample.id === selectedSampleId) ?? null,
@@ -127,8 +148,8 @@ export default function StabilityNetPage() {
   const tracks = useMemo(() => analysisTracks(analysis), [analysis]);
   const events = useMemo(() => analysisEvents(analysis), [analysis]);
   const trackRows = useMemo(
-    () => buildTrackRows(tracks, analysis?.result?.frames, events),
-    [analysis?.result?.frames, events, tracks]
+    () => buildTrackRows(tracks, events),
+    [events, tracks]
   );
   const annotatedVideoUrl = analysis ? analysisVideoUrl(analysis) : null;
   const hasAnalysisResult = analysis !== null;
@@ -204,16 +225,23 @@ export default function StabilityNetPage() {
     }
 
     setError(null);
-    setProcessingStageIndex(videoFile ? 0 : 1);
+    setProgress({ stage: "queued", percent: 0 });
     setIsSubmitting(true);
 
     try {
-      const record = videoFile
+      // Submission returns 202 with a queued record; the result arrives by
+      // polling. Progress numbers below are the backend's, not a timer's.
+      const queued = videoFile
         ? await uploadAnalysis(videoFile)
         : await createAnalysis({ video_path: selectedSample!.videoPath });
+
+      const record = await pollAnalysis(queued.analysis_id, (partial) => {
+        if (partial.progress) setProgress(partial.progress);
+      });
       setSelectedTrackId(null);
       setSelectedEventKey(null);
       setAnalysis(record);
+      refreshHistory();
       if (selectedSample) {
         setUnavailableSampleIds((sampleIds) =>
           sampleIds.filter((sampleId) => sampleId !== selectedSample.id)
@@ -233,7 +261,7 @@ export default function StabilityNetPage() {
       }
     } finally {
       setIsSubmitting(false);
-      setProcessingStageIndex(0);
+      setProgress(null);
     }
   }
 
@@ -283,7 +311,7 @@ export default function StabilityNetPage() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar history={history} onSelect={loadPastAnalysis} />
       <main className="main-content">
         <div className="content-inner">
           <Header health={health} />
@@ -318,9 +346,7 @@ export default function StabilityNetPage() {
             </button>
           </div>
 
-          {isSubmitting ? (
-            <ProcessingPanel activeStageIndex={processingStageIndex} />
-          ) : null}
+          {isSubmitting ? <ProcessingPanel progress={progress} /> : null}
 
           <div className="notice-stack" aria-live="polite">
             {health.state === "error" ? (
@@ -375,14 +401,20 @@ export default function StabilityNetPage() {
   );
 }
 
-function Sidebar() {
+function Sidebar({
+  history,
+  onSelect
+}: {
+  history: AnalysisListItem[];
+  onSelect: (analysisId: string) => void;
+}) {
   return (
     <aside className="sidebar" aria-label="StabilityNet navigation">
       <div className="sidebar-brand">
         <WalkingIcon className="brand-icon" />
         <div>
           <strong>StabilityNet</strong>
-          <p>Video-based mobility risk indicator analysis</p>
+          <p>Mobility intelligence workspace</p>
         </div>
       </div>
 
@@ -390,14 +422,35 @@ function Sidebar() {
         <SidebarLink active href="#analysis" icon={<ChartIcon />} label="Analysis" />
         <SidebarLink href="#samples" icon={<FolderIcon />} label="Samples" />
         <SidebarLink href="#results" icon={<PanelIcon />} label="Results" />
-        <SidebarLink href="#pipeline" icon={<InfoIcon />} label="About" />
+        <SidebarLink href="#pipeline" icon={<InfoIcon />} label="Method" />
       </nav>
 
+      {history.length > 0 ? (
+        <div className="sidebar-history">
+          <h3>Recent analyses</h3>
+          <ul>
+            {history.map((item) => (
+              <li key={item.analysis_id}>
+                <button type="button" onClick={() => onSelect(item.analysis_id)}>
+                  <span className="sidebar-history__name">
+                    {item.original_filename ?? item.analysis_id.slice(0, 8)}
+                  </span>
+                  <span className="sidebar-history__meta">
+                    {item.mobility_event_count ?? 0} events
+                    {item.top_severity ? ` · ${severityPresentation(item.top_severity).label}` : ""}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="prototype-card">
-        <strong>Research Prototype</strong>
+        <strong>Research use only</strong>
         <p>
-          This system analyzes uploaded videos to extract mobility patterns and
-          identify mobility risk indicators that require review.
+          Computer vision signals support review. They do not replace clinical
+          judgment.
         </p>
         <span>Not a medical device.</span>
       </div>
@@ -428,13 +481,11 @@ function Header({ health }: { health: HealthState }) {
   return (
     <header className="hero-header">
       <div className="hero-copy">
-        <h1>StabilityNet</h1>
+        <span className="hero-kicker">Motion review workspace</span>
+        <h1>See the movement.<br />Inspect the evidence.</h1>
         <p className="hero-subtitle">
-          Video-based mobility risk indicator analysis
-        </p>
-        <p className="hero-intro">
-          Upload a video or try a sample to analyze human motion, track
-          individuals, and detect mobility events that may require review.
+          Track people, review mobility events, and trace every signal back to
+          the annotated frame.
         </p>
       </div>
       <div className={`online-pill online-pill--${health.state}`}>
@@ -466,7 +517,10 @@ function UploadCard({
 }) {
   return (
     <section className="panel upload-panel" aria-labelledby="upload-title">
-      <h2 id="upload-title">1. Upload Video</h2>
+      <div className="panel-heading">
+        <h2 id="upload-title">Video source</h2>
+        <span>MP4 up to 500 MB</span>
+      </div>
       <label
         className={`dropzone${isDragging ? " dropzone--active" : ""}`}
         htmlFor="video-upload"
@@ -484,9 +538,9 @@ function UploadCard({
           onChange={onBrowse}
         />
         <UploadIcon className="dropzone-icon" />
-        <strong>Drag &amp; drop an MP4 file here</strong>
-        <span>or click to browse</span>
-        <small>Max file size: 500 MB • Format: MP4</small>
+        <strong>Drop a recording here</strong>
+        <span>Browse local files</span>
+        <small>MP4 format only</small>
         {fileName ? <em>{fileName}</em> : null}
       </label>
     </section>
@@ -504,7 +558,10 @@ function SampleVideos({
 }) {
   return (
     <section className="panel samples-panel" id="samples" aria-labelledby="samples-title">
-      <h2 id="samples-title">2. Or Try a Sample Video</h2>
+      <div className="panel-heading">
+        <h2 id="samples-title">Reference clips</h2>
+        <span>Select one to inspect</span>
+      </div>
       <div className="sample-grid">
         {SAMPLE_VIDEOS.map((sample) => {
           const isUnavailable = unavailableSampleIds.includes(sample.id);
@@ -531,7 +588,7 @@ function SampleVideos({
       </div>
       <p className="sample-note">
         <InfoIcon />
-        <span>Add MP4s locally with the documented sample filenames.</span>
+        <span>Samples use local files and never leave this machine.</span>
       </p>
     </section>
   );
@@ -599,23 +656,30 @@ function Alert({
   );
 }
 
-function ProcessingPanel({ activeStageIndex }: { activeStageIndex: number }) {
+function ProcessingPanel({ progress }: { progress: AnalysisProgress | null }) {
+  const stage = progress?.stage ?? "queued";
+  const percent = Math.max(0, Math.min(100, progress?.percent ?? 0));
+  const frames = progress?.frames_processed ?? 0;
+  const total = progress?.total_frames ?? 0;
+
   return (
     <section className="processing-panel" aria-live="polite" aria-label="Analysis status">
       <div>
         <SpinnerIcon />
-        <strong>{PROCESSING_STAGES[activeStageIndex]}</strong>
+        <strong>{STAGE_LABELS[stage] ?? stage}</strong>
       </div>
-      <ol>
-        {PROCESSING_STAGES.map((stage, index) => (
-          <li
-            className={index <= activeStageIndex ? "processing-stage--active" : ""}
-            key={stage}
-          >
-            {stage}
-          </li>
-        ))}
-      </ol>
+      <div
+        className="processing-progress"
+        role="progressbar"
+        aria-valuenow={Math.round(percent)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="processing-progress__bar" style={{ width: `${percent}%` }} />
+      </div>
+      <p className="processing-progress__label">
+        {total > 0 ? `${frames} / ${total} frames · ${percent.toFixed(0)}%` : `${percent.toFixed(0)}%`}
+      </p>
     </section>
   );
 }
@@ -635,7 +699,10 @@ function SummaryCards({
 }) {
   return (
     <section className="panel summary-panel" id="results" aria-labelledby="summary-title">
-      <h2 id="summary-title">3. Analysis Summary</h2>
+      <div className="panel-heading">
+        <h2 id="summary-title">Run telemetry</h2>
+        <span>Current analysis</span>
+      </div>
       <div className="metric-grid">
         <MetricCard icon={<ActivityIcon />} label="Status" value={status} />
         <MetricCard
@@ -722,8 +789,11 @@ function AnnotatedVideo({
       aria-labelledby="video-title"
     >
       <div className="artifact-heading">
-        <h2 id="video-title">4. Annotated Output</h2>
-        {hasResult ? <span>Primary Analysis View</span> : null}
+        <div>
+          <span className="artifact-kicker">Evidence viewer</span>
+          <h2 id="video-title">Annotated motion</h2>
+        </div>
+        {hasResult ? <span>Analysis ready</span> : <span>Awaiting run</span>}
       </div>
       <div className="video-frame">
         {videoUrl && !videoLoadError ? (
@@ -811,7 +881,9 @@ function EventMarkers({
     <div className="event-marker-strip" aria-label="Video event markers">
       <div className="event-marker-track">
         {timedEvents.map(({ event, index, key, timestamp }) => {
-          const severityTone = severityClass(readString(event, "severity") ?? "low");
+          const severityTone = severityPresentation(
+            readString(event, "severity") ?? ""
+          ).tone;
           const left = Math.min(100, Math.max(0, (timestamp / duration) * 100));
           const isSelected = selectedEventKey === key;
 
@@ -834,7 +906,7 @@ function EventMarkers({
           );
         })}
       </div>
-      <span>Mobility event markers</span>
+      <span>Event positions in source time</span>
     </div>
   );
 }
@@ -851,8 +923,8 @@ function TracksTable({
   return (
     <section className="panel table-panel" aria-labelledby="tracks-title">
       <div className="table-heading">
-        <h2 id="tracks-title">Tracked Subjects</h2>
-        <span>Total: {tracks.length.toLocaleString()}</span>
+        <h2 id="tracks-title">Subjects</h2>
+        <span>{tracks.length.toLocaleString()} tracked</span>
       </div>
       {tracks.length > 0 ? (
         <div className="subject-list">
@@ -875,7 +947,7 @@ function TracksTable({
                 <div>
                   <strong>Subject {track.id}</strong>
                   <span>
-                    {track.frames.toLocaleString()} frames • {track.motionSummary}
+                    {track.frames.toLocaleString()} frames / {track.motionSummary}
                   </span>
                 </div>
               </div>
@@ -924,8 +996,8 @@ function EventsTable({
   return (
     <section className="panel table-panel" aria-labelledby="events-title">
       <div className="table-heading">
-        <h2 id="events-title">Events Timeline</h2>
-        <span>Total: {events.length.toLocaleString()}</span>
+        <h2 id="events-title">Review queue</h2>
+        <span>{events.length.toLocaleString()} events</span>
       </div>
       {events.length > 0 ? (
         <div className="event-list">
@@ -961,7 +1033,7 @@ function EventsTable({
                 </div>
                 <p>{description}</p>
                 <span>
-                  {timestamp}s • Track {event.track_id}
+                  {timestamp}s / Subject {event.track_id}
                 </span>
               </article>
             );
@@ -978,10 +1050,10 @@ function EventsTable({
 }
 
 function SeverityBadge({ severity }: { severity: string }) {
-  const severityTone = severityClass(severity);
+  const presentation = severityPresentation(severity);
   return (
-    <span className={`severity severity--${severityTone}`}>
-      {capitalize(severityTone)}
+    <span className={`severity severity--${presentation.tone}`}>
+      {presentation.label}
     </span>
   );
 }
@@ -999,7 +1071,7 @@ function TrajectoryCell({ track, tone }: { track: TrackRow; tone: number }) {
 
 function Trajectory({ points, tone }: { points: TrackPoint[]; tone: number }) {
   if (points.length < 2) {
-    return <span className="trajectory-empty">–</span>;
+    return <span className="trajectory-empty">-</span>;
   }
 
   return (
@@ -1132,15 +1204,18 @@ function PipelineSection() {
       icon: <ChartIcon />
     },
     {
-      title: "Fall-Risk Indicators",
-      subtitle: "Identify risk events",
+      title: "Mobility Review",
+      subtitle: "Flag review events",
       icon: <ShieldIcon />
     }
   ];
 
   return (
     <section className="panel pipeline-panel" id="pipeline" aria-labelledby="pipeline-title">
-      <h2 id="pipeline-title">7. Analysis Pipeline</h2>
+      <div className="panel-heading">
+        <h2 id="pipeline-title">How the analysis runs</h2>
+        <span>Local processing pipeline</span>
+      </div>
       <div className="pipeline-steps">
         {steps.map((step, index) => (
           <div className="pipeline-item" key={step.title}>
@@ -1154,19 +1229,19 @@ function PipelineSection() {
         ))}
       </div>
       <div className="technical-metadata">
-        <span>Uploaded-video inference • YOLO26n • OpenCV • SORT tracking</span>
+        <span>Uploaded-video inference / YOLO26n / OpenCV / SORT tracking</span>
         <span>Research prototype. Not a medical device.</span>
       </div>
     </section>
   );
 }
 
-function buildTrackRows(
-  tracks: TrackSummary[],
-  frames: unknown[] | undefined,
-  events: BehaviorEvent[]
-): TrackRow[] {
-  const observationsByTrack = observationsFromFrames(frames);
+// Trajectories come from tracks[].trajectory, which the pipeline already
+// populates. The previous implementation reconstructed them by walking the
+// per-frame trace, which is why the API had to ship several megabytes of
+// frames to the browser on every analysis.
+function buildTrackRows(tracks: TrackSummary[], events: BehaviorEvent[]): TrackRow[] {
+  const observationsByTrack = new Map<number, TrackPoint[]>();
   const eventCounts = eventCountsByTrack(events);
   const ids = new Set<number>();
 
@@ -1330,42 +1405,6 @@ function parseTrajectoryPoint(value: unknown): TrackPoint | undefined {
   };
 }
 
-function observationsFromFrames(
-  frames: unknown[] | undefined
-): Map<number, TrackPoint[]> {
-  const observations = new Map<number, TrackPoint[]>();
-
-  for (const frame of safeUnknownArray(frames)) {
-    if (!isRecord(frame)) {
-      continue;
-    }
-    const frameTimestamp = readNumber(frame, "timestamp_s");
-    for (const track of safeUnknownArray(frame.tracks)) {
-      if (!isRecord(track)) {
-        continue;
-      }
-      const trackId = readNumber(track, "track_id");
-      if (trackId === undefined) {
-        continue;
-      }
-      const center = readCenter(track.center) ?? readCenter(readRecord(track, "bbox")?.center);
-      if (!center) {
-        continue;
-      }
-      const list = observations.get(trackId) ?? [];
-      list.push({
-        x: center[0],
-        y: center[1],
-        confidence: readNumber(track, "confidence"),
-        timestamp: readNumber(track, "timestamp_s") ?? frameTimestamp
-      });
-      observations.set(trackId, list);
-    }
-  }
-
-  return observations;
-}
-
 function trajectoryPolyline(points: TrackPoint[]): string {
   const visiblePoints = points.slice(-24);
   const xValues = visiblePoints.map((point) => point.x);
@@ -1419,9 +1458,6 @@ function safeArray<T>(value: T[] | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-function safeUnknownArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
 
 function numberOrZero(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -1433,7 +1469,7 @@ function isFiniteNumber(value: unknown): value is number {
 
 function formatOptionalDecimal(value: number | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "–";
+    return "-";
   }
 
   return value >= 10 ? value.toFixed(1) : value.toFixed(2);
@@ -1442,7 +1478,7 @@ function formatOptionalDecimal(value: number | undefined): string {
 function formatMetricNumber(value: number | undefined): string {
   return typeof value === "number" && Number.isFinite(value)
     ? formatOptionalDecimal(value)
-    : "–";
+    : "-";
 }
 
 function humanizeStatus(value: string): string {
@@ -1484,17 +1520,6 @@ function eventCardKey(event: BehaviorEvent, index: number): string {
     readString(event, "event_id") ??
     `${readNumber(event, "track_id") ?? "na"}-${readString(event, "event_type") ?? "event"}-${index}`
   );
-}
-
-function severityClass(value: string): "low" | "medium" | "high" {
-  const normalized = value.toLowerCase();
-  if (normalized.includes("high") || normalized.includes("critical")) {
-    return "high";
-  }
-  if (normalized.includes("medium") || normalized.includes("moderate")) {
-    return "medium";
-  }
-  return "low";
 }
 
 function readRecord(

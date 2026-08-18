@@ -1,0 +1,8 @@
+{
+  "clip": "samples/office-hallway-walk.mp4",
+  "duration_s": 12.26,
+  "description": "NEGATIVE CONTROL. One person walks steadily down a hallway reading a clipboard for the entire clip. No fall, no stop, no transition. Any high-severity event here is a false positive.",
+  "labelled_by": "frame inspection at 1 fps",
+  "positive": false,
+  "events": []
+}

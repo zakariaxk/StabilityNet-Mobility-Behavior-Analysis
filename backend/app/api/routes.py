@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from fastapi import Response
 from fastapi.responses import FileResponse
 
 from app.api.analysis_service import (
@@ -60,11 +61,14 @@ def health(request: Request) -> dict[str, object]:
 def create_analysis(
     payload: AnalysisCreateRequest,
     request: Request,
+    response: Response,
 ) -> dict[str, object]:
     service = _analysis_service(request)
     logger.info("analysis sample request received")
     try:
-        return service.create(payload.video_path)
+        record = service.submit(payload.video_path)
+        response.status_code = status.HTTP_202_ACCEPTED
+        return record
     except VideoOpenError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (DetectorDependencyError, VideoDependencyError) as exc:
@@ -87,6 +91,7 @@ def create_analysis(
 )
 def upload_analysis(
     request: Request,
+    response: Response,
     file: UploadFile | None = File(None),
 ) -> dict[str, object]:
     service = _analysis_service(request)
@@ -97,7 +102,9 @@ def upload_analysis(
         raise HTTPException(status_code=400, detail="Only MP4 video uploads are supported.")
 
     try:
-        return service.create_from_upload(file.filename, file.file)
+        record = service.submit_from_upload(file.filename, file.file)
+        response.status_code = status.HTTP_202_ACCEPTED
+        return record
     except (InvalidUploadError, VideoOpenError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (DetectorDependencyError, VideoDependencyError) as exc:
@@ -111,6 +118,32 @@ def upload_analysis(
     except VideoWriteError as exc:
         logger.exception("upload analysis video output failed")
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/analyses")
+def list_analyses(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, object]:
+    """Paginated list of stored analyses, newest first."""
+
+    service = _analysis_service(request)
+    bounded_limit = max(1, min(200, limit))
+    bounded_offset = max(0, offset)
+    return service.list_analyses(limit=bounded_limit, offset=bounded_offset)
+
+
+@router.get("/analyses/{analysis_id}/frames")
+def get_analysis_frames(analysis_id: str, request: Request) -> dict[str, object]:
+    """Full per-frame trace. Large — excluded from the analysis response."""
+
+    service = _analysis_service(request)
+    try:
+        frames = service.get_frames(analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"analysis_id": analysis_id, "frames": frames}
 
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisRecord)

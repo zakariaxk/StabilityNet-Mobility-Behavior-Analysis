@@ -2,7 +2,10 @@
 
 ## Current Phase
 
-Phase 2: minimal synchronous API over the offline backend pipeline.
+Phase 3 (revised): background job execution over the offline pipeline, with a
+labelled evaluation seam. Redis and PostgreSQL remain deferred — a
+single-worker thread pool plus the JSON records already on disk solves the
+blocking-request problem without them. See docs/FINISHING_PLAN.md.
 
 ## Completed
 
@@ -23,5 +26,6 @@ Phase 2: minimal synchronous API over the offline backend pipeline.
 
 ## Next
 
-- Run the full pipeline against a real uploaded MP4 and inspect API/UI output
-  before adding Redis or PostgreSQL.
+- Split the 1,700-line frontend page component (S8).
+- Prune the outputs directory and commit real sample thumbnails (S10).
+- Threshold sensitivity sweep against a larger labelled set (SF1).

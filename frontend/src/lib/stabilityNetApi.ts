@@ -77,15 +77,29 @@ export interface AnalysisResult {
   message?: string | null;
   video?: AnalysisVideoMetadata;
   frames_processed?: number;
+  /**
+   * Per-frame trace. No longer returned by the API — it made responses
+   * several MB. Fetch GET /analyses/{id}/frames if you need it for debugging.
+   */
   frames?: unknown[];
   tracks?: TrackSummary[];
   events?: BehaviorEvent[];
   [key: string]: unknown;
 }
 
+export interface AnalysisProgress {
+  stage: string;
+  frames_processed?: number;
+  total_frames?: number;
+  percent?: number;
+}
+
 export interface AnalysisRecord {
   analysis_id: string;
+  /** "processing" | "completed" | "failed" */
   status: string;
+  progress?: AnalysisProgress;
+  created_at?: string;
   frames_processed: number;
   tracks_count: number;
   events_count: number;
@@ -155,6 +169,51 @@ export async function uploadAnalysis(file: File): Promise<AnalysisRecord> {
 
 export async function getAnalysis(analysisId: string): Promise<AnalysisRecord> {
   return requestJson<AnalysisRecord>(`/analyses/${encodeURIComponent(analysisId)}`);
+}
+
+export interface AnalysisListItem {
+  analysis_id: string;
+  status: string;
+  created_at: string;
+  original_filename?: string | null;
+  source?: string | null;
+  qualified_subject_count?: number | null;
+  mobility_event_count?: number | null;
+  scene_reliability?: string | null;
+  top_severity?: string | null;
+}
+
+export async function listAnalyses(limit = 20): Promise<{ items: AnalysisListItem[]; total: number }> {
+  return requestJson(`/analyses?limit=${limit}`);
+}
+
+/**
+ * Poll a queued analysis until it finishes.
+ *
+ * Submission returns 202 immediately; the pipeline runs on a background
+ * worker. onProgress fires with each observed record so the UI can show real
+ * numbers rather than a timer-driven guess.
+ */
+export async function pollAnalysis(
+  analysisId: string,
+  onProgress: (record: AnalysisRecord) => void,
+  { intervalMs = 1000, timeoutMs = 15 * 60 * 1000 }: { intervalMs?: number; timeoutMs?: number } = {}
+): Promise<AnalysisRecord> {
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const record = await getAnalysis(analysisId);
+    onProgress(record);
+
+    if (record.status === "completed") return record;
+    if (record.status === "failed") {
+      throw new StabilityNetApiError(record.message || "Analysis failed.", 500);
+    }
+    if (Date.now() > deadline) {
+      throw new StabilityNetApiError("Analysis timed out.", 504);
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
 }
 
 export function analysisVideoUrl(record: AnalysisRecord): string | null {

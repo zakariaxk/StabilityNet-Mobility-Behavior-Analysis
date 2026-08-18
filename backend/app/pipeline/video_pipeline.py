@@ -6,6 +6,7 @@ import logging
 import math
 import time
 from datetime import UTC, datetime
+from typing import Callable, TypedDict
 
 from app.behavior.events import BehaviorEvent
 from app.behavior.features import BehaviorFeatures, extract_features
@@ -28,7 +29,27 @@ class AnalysisPipelineError(RuntimeError):
     """Raised when analysis fails inside the per-frame pipeline."""
 
 
-def analyze_video(request: AnalysisRequest) -> dict[str, object]:
+class _SceneReliability(TypedDict):
+    category: str
+    score: float
+    reasons: list[str]
+
+
+class _FinalizedAnalysisPolicy(TypedDict):
+    qualified_tracks: list[dict[str, object]]
+    qualified_subject_count: int
+    scene_reliability: _SceneReliability
+    display_events: list[BehaviorEvent]
+    events_suppressed_count: int
+
+
+ProgressCallback = Callable[[str, int, int], None]
+
+
+def analyze_video(
+    request: AnalysisRequest,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, object]:
     """Probe a video and write a Phase 1B analysis payload.
 
     Detection, tracking, and behavior scoring are added in later Phase 1 steps.
@@ -127,6 +148,33 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
                     all_observations.extend(analysis_observations)
 
                     event_started_at = time.perf_counter()
+
+                    # Uncertainty events, computed against the previous
+                    # analysis frame. These were written but never called, so
+                    # the "camera motion uncertainty" branch of
+                    # _scene_reliability scored a condition that could not
+                    # occur, and the two track-end event types were handled
+                    # everywhere downstream while nothing ever emitted them.
+                    camera_motion_event = _camera_motion_uncertainty_event(
+                        previous_observations=previous_analysis_observations,
+                        current_observations=analysis_observations,
+                        frame_width=metadata.width,
+                        frame_height=metadata.height,
+                        timestamp_s=frame.timestamp_s,
+                    )
+                    if camera_motion_event is not None:
+                        add_event(camera_motion_event)
+
+                    for track_end_event in _track_end_events(
+                        previous_observations=previous_analysis_observations,
+                        current_observations=analysis_observations,
+                        latest_features=latest_features,
+                        frame_width=metadata.width,
+                        frame_height=metadata.height,
+                        timestamp_s=frame.timestamp_s,
+                    ):
+                        add_event(track_end_event)
+
                     for observation in analysis_observations:
                         history = track_store.update(observation)
                         features = extract_features(history, request.config.behavior)
@@ -204,7 +252,14 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
                 }
             )
             frames_processed += 1
+            if progress_callback is not None and frames_processed % 10 == 0:
+                progress_callback("analyzing", frames_processed, metadata.frame_count)
         frame_loop_seconds = time.perf_counter() - frame_loop_started_at
+
+    if progress_callback is not None:
+        # The ffmpeg transcode happens on AnnotatedVideoWriter exit, which is
+        # the slow tail users were staring at with no feedback.
+        progress_callback("encoding", frames_processed, metadata.frame_count)
     timing_seconds["encode"] = annotated_writer.transcode_seconds
 
     if frames_processed == 0:
@@ -218,9 +273,18 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         config=request.config.behavior,
     )
     raw_track_count = len(tracks)
-    merged_events = _merge_nearby_events(events)
-    event_payloads = [event.to_dict() for event in merged_events]
     raw_event_count = len(events)
+    policy = _finalize_analysis_policy(
+        tracks=tracks,
+        raw_events=events,
+        frames_processed=frames_processed,
+    )
+    qualified_tracks = policy["qualified_tracks"]
+    qualified_subject_count = int(policy["qualified_subject_count"])
+    display_events = policy["display_events"]
+    event_payloads = [event.to_dict() for event in display_events]
+    events_suppressed_count = int(policy["events_suppressed_count"])
+    scene_reliability = policy["scene_reliability"]
     end_to_end_seconds = time.perf_counter() - started_at
     analysis_throughput_fps = (
         frames_processed / frame_loop_seconds
@@ -270,11 +334,11 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
         "analysis_resolution_width": request.config.detector.analysis_width,
         "annotated_output_max_width": request.config.annotated_output_max_width,
         "raw_track_count": raw_track_count,
-        "qualified_subject_count": raw_track_count,
+        "qualified_subject_count": qualified_subject_count,
         "tracks_count": raw_track_count,
         "confirmed_tracks_count": sum(1 for track in tracks if track.get("is_confirmed") is True),
         "raw_event_count": raw_event_count,
-        "events_suppressed_count": max(0, raw_event_count - len(event_payloads)),
+        "events_suppressed_count": events_suppressed_count,
         "mobility_event_count": len(event_payloads),
         "events_count": len(event_payloads),
         "fps": metadata.fps,
@@ -309,25 +373,27 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
             "end_to_end_processing_fps": end_to_end_throughput_fps,
             "effective_analysis_fps": effective_analysis_fps,
         },
-        "scene_reliability": "Unknown",
-        "scene_reliability_score": None,
-        "scene_reliability_reasons": [],
+        "scene_reliability": scene_reliability["category"],
+        "scene_reliability_score": scene_reliability["score"],
+        "scene_reliability_reasons": scene_reliability["reasons"],
         "annotated_video_url": annotated_video_url,
         "message": None,
         "frames": frame_summaries,
         "tracks": tracks,
-        "qualified_tracks": tracks,
+        "qualified_tracks": qualified_tracks,
         "events": event_payloads,
         "debug": {
             "raw_track_count": raw_track_count,
             "raw_event_count": raw_event_count,
-            "qualified_subject_count": raw_track_count,
+            "qualified_subject_count": qualified_subject_count,
             "analysis_frame_stride": analysis_frame_stride,
             "analysis_stride_mode": analysis_stride_mode,
             "analysis_resolution_width": request.config.detector.analysis_width,
             "annotated_output_max_width": request.config.annotated_output_max_width,
         },
     }
+    if progress_callback is not None:
+        progress_callback("finalizing", frames_processed, metadata.frame_count)
     write_json(request.output_path, result)
     logger.info(
         "analysis completed",
@@ -335,7 +401,7 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
             "video_path": str(request.video_path),
             "frames_processed": frames_processed,
             "raw_track_count": raw_track_count,
-            "qualified_subject_count": raw_track_count,
+            "qualified_subject_count": qualified_subject_count,
             "events_count": len(event_payloads),
         },
     )
@@ -518,12 +584,40 @@ def _track_motion_state(feature_record: dict[str, object]) -> str:
     return "walking"
 
 
+def _finalize_analysis_policy(
+    *,
+    tracks: list[dict[str, object]],
+    raw_events: list[BehaviorEvent],
+    frames_processed: int,
+) -> _FinalizedAnalysisPolicy:
+    """Apply the production qualification, reliability, and display-event policy."""
+
+    qualified_tracks = [track for track in tracks if track.get("qualified") is True]
+    scene_reliability = _scene_reliability(
+        tracks=tracks,
+        raw_events=raw_events,
+        frames_processed=frames_processed,
+    )
+    display_events, events_suppressed_count = _display_events(
+        events=raw_events,
+        tracks=tracks,
+        scene_reliability=scene_reliability,
+    )
+    return {
+        "qualified_tracks": qualified_tracks,
+        "qualified_subject_count": len(qualified_tracks),
+        "scene_reliability": scene_reliability,
+        "display_events": display_events,
+        "events_suppressed_count": events_suppressed_count,
+    }
+
+
 def _scene_reliability(
     *,
     tracks: list[dict[str, object]],
     raw_events: list[BehaviorEvent],
     frames_processed: int,
-) -> dict[str, object]:
+) -> _SceneReliability:
     raw_track_count = len(tracks)
     qualified_count = sum(1 for track in tracks if track.get("qualified") is True)
     short_or_suppressed_count = raw_track_count - qualified_count
@@ -579,7 +673,7 @@ def _display_events(
     *,
     events: list[BehaviorEvent],
     tracks: list[dict[str, object]],
-    scene_reliability: dict[str, object],
+    scene_reliability: _SceneReliability,
 ) -> tuple[list[BehaviorEvent], int]:
     tracks_by_id = {
         int(track["track_id"]): track
@@ -607,7 +701,20 @@ def _display_events(
         )
         display_events.append(normalized_event)
 
-    merged_events = _merge_nearby_events(display_events)
+    # When the scene itself is moving, per-track position variance has a
+    # single shared explanation, and reporting it once per subject presents
+    # one camera pan as a dozen independent findings. Measured on
+    # samples/assisted-walk-sit.mp4: 19 "Abrupt trajectory change" rows for
+    # one hand-held sequence. The detection is unchanged — only the
+    # presentation collapses, and the count is preserved on the row.
+    camera_motion_detected = any(
+        event.event_type == "Camera motion uncertainty" for event in display_events
+    )
+    extra_types = {"Abrupt trajectory change"} if camera_motion_detected else None
+    merged_events = _aggregate_uncertainty_events(
+        _merge_nearby_events(display_events),
+        extra_types=extra_types,
+    )
     merged_events.sort(
         key=lambda event: (
             event.display_priority,
@@ -691,6 +798,58 @@ def _event_priority(event_type: str, severity: str) -> int:
     if severity == "insufficient_evidence":
         return 65
     return 85
+
+
+# Track-end uncertainty is per-track by nature: a crowded scene ends dozens of
+# short tracks and would emit one event each, burying the handful of findings
+# that matter. These types collapse to a single summary row carrying a count.
+_AGGREGATE_EVENT_TYPES = {
+    "Insufficient visual evidence",
+    "Track ended near frame boundary",
+}
+
+
+def _aggregate_uncertainty_events(
+    events: list[BehaviorEvent],
+    *,
+    extra_types: set[str] | None = None,
+) -> list[BehaviorEvent]:
+    """Collapse per-track uncertainty events into one row per type."""
+
+    aggregate_types = _AGGREGATE_EVENT_TYPES | (extra_types or set())
+    kept: list[BehaviorEvent] = []
+    first_of_type: dict[str, BehaviorEvent] = {}
+    counts: dict[str, int] = {}
+
+    for event in events:
+        if event.event_type not in aggregate_types:
+            kept.append(event)
+            continue
+        counts[event.event_type] = counts.get(event.event_type, 0) + event.merged_count
+        if event.event_type not in first_of_type:
+            first_of_type[event.event_type] = event
+
+    for event_type, representative in first_of_type.items():
+        count = counts[event_type]
+        reason = representative.reason
+        if count > 1:
+            reason = f"{reason} Affected {count} tracks in this clip."
+        kept.append(
+            BehaviorEvent(
+                event_id=representative.event_id,
+                track_id=representative.track_id,
+                event_type=event_type,
+                severity=representative.severity,
+                score=representative.score,
+                timestamp_s=representative.timestamp_s,
+                reason=reason,
+                feature_snapshot=representative.feature_snapshot,
+                confidence=representative.confidence,
+                display_priority=representative.display_priority,
+                merged_count=count,
+            )
+        )
+    return kept
 
 
 def _merge_nearby_events(events: list[BehaviorEvent]) -> list[BehaviorEvent]:
@@ -854,24 +1013,6 @@ def _camera_motion_uncertainty_event(
             "mean_shift_px": round(mean_magnitude, 3),
             "coherence": round(coherence, 3),
         },
-    )
-
-
-def _insufficient_evidence_event(
-    *,
-    observation: TrackObservation,
-    features: BehaviorFeatures,
-    timestamp_s: float,
-) -> BehaviorEvent | None:
-    if observation.confidence >= 0.42 and features.observations >= 5:
-        return None
-    return _custom_event(
-        track_id=observation.track_id,
-        event_type="Insufficient visual evidence",
-        severity="insufficient_evidence",
-        timestamp_s=timestamp_s,
-        reason="Low-confidence or fragmented track; requires review.",
-        feature_snapshot=features.to_dict(),
     )
 
 

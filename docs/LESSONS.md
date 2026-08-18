@@ -18,3 +18,12 @@
   Next.js development origins for now.
 - Local file paths are useful for backend debugging but poor user experience.
   The review UI should make upload-and-review the primary workflow.
+- Tested policy helpers are not protection if the production orchestration
+  bypasses them. Keep a pure finalization seam and test the values returned to
+  API clients.
+- Persist analysis JSON with a same-directory temporary file and atomic replace;
+  direct writes can turn a recoverable interruption into a corrupt record.
+- Unknown or uncertain severity values must fail toward review, never toward a
+  reassuring green presentation.
+- Do not retune vision heuristics from demo impressions alone. Add labeled event
+  metrics and invariance tests first, then measure changes on held-out clips.

@@ -5,6 +5,7 @@ from app.behavior.features import BehaviorFeatures
 from app.config import BehaviorConfig
 from app.pipeline.video_pipeline import (
     _display_events,
+    _finalize_analysis_policy,
     _merge_nearby_events,
     _scene_reliability,
     _summarize_tracks,
@@ -53,6 +54,28 @@ def event(
 
 
 class PipelinePolicyTests(unittest.TestCase):
+    def test_production_policy_finalization_filters_tracks_events_and_sets_reliability(self) -> None:
+        tracks = [
+            {"track_id": 1, "qualified": True, "avg_confidence": 0.9},
+            {"track_id": 2, "qualified": False, "avg_confidence": 0.2},
+        ]
+
+        policy = _finalize_analysis_policy(
+            tracks=tracks,
+            raw_events=[
+                event("Abrupt trajectory change", "high", track_id=1),
+                event("Abrupt trajectory change", "high", track_id=2),
+            ],
+            frames_processed=100,
+        )
+
+        self.assertEqual(policy["qualified_subject_count"], 1)
+        self.assertEqual([track["track_id"] for track in policy["qualified_tracks"]], [1])
+        self.assertEqual([item.track_id for item in policy["display_events"]], [1])
+        self.assertEqual(policy["events_suppressed_count"], 1)
+        self.assertEqual(policy["scene_reliability"]["category"], "High")
+        self.assertIsInstance(policy["scene_reliability"]["score"], float)
+
     def test_ultra_short_tracks_are_not_qualified_subjects(self) -> None:
         observations = [
             observation(1, index, index / 30.0)

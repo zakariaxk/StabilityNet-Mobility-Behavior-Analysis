@@ -1,5 +1,6 @@
 """Runtime configuration for the offline analysis pipeline."""
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -170,7 +171,7 @@ def _positive_float_from_env(name: str, default: float, minimum: float) -> float
         parsed = float(raw_value)
     except ValueError:
         return default
-    if parsed < minimum:
+    if not math.isfinite(parsed) or parsed < minimum:
         return default
     return parsed
 

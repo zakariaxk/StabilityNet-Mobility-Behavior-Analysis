@@ -13,7 +13,7 @@ from app.pipeline.result_writer import write_json
 from app.vision.detector import DetectorInferenceError
 
 
-def fake_runner(request: AnalysisRequest) -> dict[str, object]:
+def fake_runner(request: AnalysisRequest, progress_callback: object = None) -> dict[str, object]:
     result = {
         "analysis_version": "test",
         "video": {"path": str(request.video_path)},
@@ -32,22 +32,22 @@ def fake_runner(request: AnalysisRequest) -> dict[str, object]:
     return result
 
 
-def fake_runner_with_annotated_video(request: AnalysisRequest) -> dict[str, object]:
+def fake_runner_with_annotated_video(request: AnalysisRequest, progress_callback: object = None) -> dict[str, object]:
     if request.annotated_video_path is not None:
         request.annotated_video_path.parent.mkdir(parents=True, exist_ok=True)
         request.annotated_video_path.write_bytes(b"annotated video bytes")
     return fake_runner(request)
 
 
-def pipeline_error_runner(request: AnalysisRequest) -> dict[str, object]:
+def pipeline_error_runner(request: AnalysisRequest, progress_callback: object = None) -> dict[str, object]:
     raise AnalysisPipelineError("Analysis failed while processing frame 3.")
 
 
-def inference_error_runner(request: AnalysisRequest) -> dict[str, object]:
+def inference_error_runner(request: AnalysisRequest, progress_callback: object = None) -> dict[str, object]:
     raise DetectorInferenceError("YOLO inference failed while processing a frame.")
 
 
-def video_write_error_runner(request: AnalysisRequest) -> dict[str, object]:
+def video_write_error_runner(request: AnalysisRequest, progress_callback: object = None) -> dict[str, object]:
     raise VideoWriteError("ffmpeg is required to create browser-compatible output.")
 
 
@@ -69,8 +69,14 @@ class ApiTests(unittest.TestCase):
                 json={"video_path": "samples/test-video.mp4"},
             )
 
-            self.assertEqual(create_response.status_code, 201)
-            created = create_response.json()
+            self.assertEqual(create_response.status_code, 202)
+            self.assertEqual(create_response.json()["status"], "processing")
+            analysis_id = create_response.json()["analysis_id"]
+            service.wait_for(analysis_id)
+
+            # Read the finished record back through the API, not off disk: the
+            # response model is what strips internal fields like video_path.
+            created = client.get(f"/analyses/{analysis_id}").json()
             self.assertEqual(created["status"], "completed")
             self.assertEqual(created["frames_processed"], 0)
             self.assertEqual(created["tracks_count"], 0)
@@ -91,7 +97,12 @@ class ApiTests(unittest.TestCase):
             self.assertNotIn("path", created["result"]["video"])
             self.assertEqual(created["result"]["analysis_version"], "test")
             self.assertEqual(created["result"]["status"], "completed")
-            self.assertEqual(created["result"]["events"][0]["event_type"], "Slow walking")
+            # tracks/events live at the record top level; `result` no longer
+            # duplicates them (that tripled the payload — see _public_result).
+            self.assertNotIn("events", created["result"])
+            self.assertNotIn("tracks", created["result"])
+            self.assertNotIn("frames", created["result"])
+            self.assertEqual(created["events"][0]["event_type"], "Slow walking")
             self.assertEqual(created["summary"]["frames_processed"], 0)
             self.assertEqual(created["summary"]["track_count"], 0)
             self.assertEqual(created["summary"]["event_count"], 1)
@@ -171,7 +182,7 @@ class ApiTests(unittest.TestCase):
                 files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
             )
 
-            self.assertEqual(create_response.status_code, 201)
+            self.assertEqual(create_response.status_code, 202)
             created = create_response.json()
             self.assertEqual(created["source"], "uploaded_file")
             self.assertEqual(created["original_filename"], "clip.mp4")
@@ -202,8 +213,9 @@ class ApiTests(unittest.TestCase):
                 files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
             )
 
-            self.assertEqual(create_response.status_code, 201)
-            created = create_response.json()
+            self.assertEqual(create_response.status_code, 202)
+            service.wait_for(create_response.json()["analysis_id"])
+            created = client.get(f"/analyses/{create_response.json()['analysis_id']}").json()
             annotated_video_url = created["annotated_video_url"]
             self.assertTrue(annotated_video_url.startswith("/outputs/"))
             self.assertEqual(created["result"]["annotated_video_url"], annotated_video_url)
@@ -273,11 +285,13 @@ class ApiTests(unittest.TestCase):
                 files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
             )
 
-            self.assertEqual(response.status_code, 500)
-            self.assertEqual(
-                response.json()["detail"],
-                "Analysis failed while processing frame 3.",
-            )
+            # Submission is accepted; the failure happens in the worker after
+            # the HTTP request is gone, so it is recorded rather than returned.
+            self.assertEqual(response.status_code, 202)
+            record = service.wait_for(response.json()["analysis_id"])
+            self.assertEqual(record["status"], "failed")
+            self.assertEqual(record["error_kind"], "AnalysisPipelineError")
+            self.assertEqual(record["message"], "Analysis failed while processing frame 3.")
 
     def test_returns_clean_inference_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -289,11 +303,13 @@ class ApiTests(unittest.TestCase):
                 files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
             )
 
-            self.assertEqual(response.status_code, 500)
-            self.assertEqual(
-                response.json()["detail"],
-                "YOLO inference failed while processing a frame.",
-            )
+            # Submission is accepted; the failure happens in the worker after
+            # the HTTP request is gone, so it is recorded rather than returned.
+            self.assertEqual(response.status_code, 202)
+            record = service.wait_for(response.json()["analysis_id"])
+            self.assertEqual(record["status"], "failed")
+            self.assertEqual(record["error_kind"], "DetectorInferenceError")
+            self.assertEqual(record["message"], "YOLO inference failed while processing a frame.")
 
     def test_returns_dependency_error_for_annotated_video_write_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -305,11 +321,13 @@ class ApiTests(unittest.TestCase):
                 files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
             )
 
-            self.assertEqual(response.status_code, 503)
-            self.assertEqual(
-                response.json()["detail"],
-                "ffmpeg is required to create browser-compatible output.",
-            )
+            # Submission is accepted; the failure happens in the worker after
+            # the HTTP request is gone, so it is recorded rather than returned.
+            self.assertEqual(response.status_code, 202)
+            record = service.wait_for(response.json()["analysis_id"])
+            self.assertEqual(record["status"], "failed")
+            self.assertEqual(record["error_kind"], "VideoWriteError")
+            self.assertEqual(record["message"], "ffmpeg is required to create browser-compatible output.")
 
     def test_allows_local_nextjs_dev_origin(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

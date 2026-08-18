@@ -7,6 +7,9 @@ import logging
 import math
 import re
 import shutil
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO, Callable
 from uuid import UUID, uuid4
@@ -16,8 +19,16 @@ from app.pipeline.frame_reader import VideoOpenError
 from app.pipeline.result_writer import write_json
 from app.pipeline.video_pipeline import analyze_video
 
-AnalysisRunner = Callable[[AnalysisRequest], dict[str, object]]
+# The optional second parameter is the progress callback. Runners that do not
+# report progress (tests, and any caller that just wants a result) accept and
+# ignore it.
+AnalysisRunner = Callable[..., dict[str, object]]
 logger = logging.getLogger(__name__)
+
+# One worker on purpose. Analyses are CPU-bound (YOLO inference plus an ffmpeg
+# transcode); running several concurrently makes every one of them slower and
+# gives no user a result sooner. Queueing is the honest behaviour.
+_ANALYSIS_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="analysis")
 
 
 class AnalysisNotFoundError(RuntimeError):
@@ -49,6 +60,7 @@ class AnalysisService:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.video_output_dir.mkdir(parents=True, exist_ok=True)
+        self._jobs: dict[str, Future[None]] = {}
 
     def create(self, video_path: Path | str | None) -> dict[str, object]:
         analysis_id = str(uuid4())
@@ -58,6 +70,174 @@ class AnalysisService:
             video_path=safe_video_path,
             source="local_path",
         )
+
+    def submit(self, video_path: Path | str | None) -> dict[str, object]:
+        """Queue a sample-path analysis and return immediately."""
+
+        analysis_id = str(uuid4())
+        safe_video_path = self._resolve_sample_video_path(video_path)
+        return self._submit_analysis(
+            analysis_id=analysis_id,
+            video_path=safe_video_path,
+            source="local_path",
+        )
+
+    def submit_from_upload(
+        self,
+        filename: str | None,
+        content: BinaryIO,
+    ) -> dict[str, object]:
+        """Persist the upload, queue the analysis, return immediately.
+
+        The request used to block for the entire pipeline — inference plus an
+        ffmpeg transcode — so a 20s clip meant a multi-minute HTTP request with
+        no progress and no way to cancel.
+        """
+
+        analysis_id = str(uuid4())
+        upload_path = self._save_upload(analysis_id, filename)
+        safe_name = upload_path.name
+        with upload_path.open("wb") as output_file:
+            shutil.copyfileobj(content, output_file)
+        if upload_path.stat().st_size == 0:
+            upload_path.unlink(missing_ok=True)
+            raise InvalidUploadError("Uploaded MP4 file is empty.")
+
+        return self._submit_analysis(
+            analysis_id=analysis_id,
+            video_path=upload_path,
+            source="uploaded_file",
+            original_filename=filename or safe_name,
+            video_url=f"/analyses/{analysis_id}/video",
+            uploaded_video_path=str(upload_path),
+        )
+
+    def _save_upload(self, analysis_id: str, filename: str | None) -> Path:
+        safe_name = _safe_upload_filename(filename)
+        upload_path = self.upload_dir / analysis_id / safe_name
+        upload_path.parent.mkdir(parents=True, exist_ok=True)
+        return upload_path
+
+    def _write_pending_record(
+        self,
+        analysis_id: str,
+        video_path: Path,
+        source: str,
+        original_filename: str | None,
+        video_url: str | None,
+        uploaded_video_path: str | None,
+    ) -> dict[str, object]:
+        record: dict[str, object] = {
+            "analysis_id": analysis_id,
+            "status": "processing",
+            "created_at": datetime.now(UTC).isoformat(),
+            "progress": {"stage": "queued", "frames_processed": 0, "total_frames": 0, "percent": 0.0},
+            "source": source,
+            "video_path": str(video_path),
+            "tracks": [],
+            "events": [],
+            "summary": {},
+            "result": {},
+            "message": None,
+        }
+        if original_filename is not None:
+            record["original_filename"] = original_filename
+        if video_url is not None:
+            record["video_url"] = video_url
+        if uploaded_video_path is not None:
+            record["uploaded_video_path"] = uploaded_video_path
+        write_json(self._record_path(analysis_id), record)
+        return record
+
+    def _submit_analysis(
+        self,
+        analysis_id: str,
+        video_path: Path,
+        source: str,
+        original_filename: str | None = None,
+        video_url: str | None = None,
+        uploaded_video_path: str | None = None,
+    ) -> dict[str, object]:
+        record = self._write_pending_record(
+            analysis_id, video_path, source, original_filename, video_url, uploaded_video_path
+        )
+
+        def task() -> None:
+            try:
+                self._run_analysis(
+                    analysis_id=analysis_id,
+                    video_path=video_path,
+                    source=source,
+                    original_filename=original_filename,
+                    video_url=video_url,
+                    uploaded_video_path=uploaded_video_path,
+                    progress_callback=self._make_progress_writer(analysis_id),
+                )
+            except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
+                logger.exception("background analysis failed", extra={"analysis_id": analysis_id})
+                self._write_failed_record(analysis_id, exc)
+                raise
+
+        future: Future[None] = _ANALYSIS_EXECUTOR.submit(task)
+        self._jobs[analysis_id] = future
+        return record
+
+    def wait_for(self, analysis_id: str, timeout: float = 60.0) -> dict[str, object]:
+        """Block until a queued analysis finishes. For tests and the CLI.
+
+        Does not re-raise the worker's exception: a failed analysis is a
+        recorded outcome (status="failed" with error_kind), not a transport
+        error, because by the time it fails the HTTP request is long gone.
+        """
+
+        future = self._jobs.get(analysis_id)
+        if future is not None:
+            try:
+                future.result(timeout=timeout)
+            except Exception:  # noqa: BLE001 - already recorded on the record
+                pass
+        return self.get(analysis_id)
+
+    def _make_progress_writer(self, analysis_id: str) -> Callable[[str, int, int], None]:
+        """Persist progress into the record so GET /analyses/{id} can report it."""
+
+        lock = threading.Lock()
+
+        def write_progress(stage: str, frames_processed: int, total_frames: int) -> None:
+            percent = (
+                min(99.0, round(frames_processed / total_frames * 100.0, 1))
+                if total_frames > 0
+                else 0.0
+            )
+            if stage == "encoding":
+                percent = max(percent, 95.0)
+            elif stage == "finalizing":
+                percent = 99.0
+            with lock:
+                try:
+                    record = self.get(analysis_id)
+                except AnalysisNotFoundError:
+                    return
+                record["progress"] = {
+                    "stage": stage,
+                    "frames_processed": frames_processed,
+                    "total_frames": total_frames,
+                    "percent": percent,
+                }
+                write_json(self._record_path(analysis_id), record)
+
+        return write_progress
+
+    def _write_failed_record(self, analysis_id: str, exc: BaseException) -> None:
+        try:
+            record = self.get(analysis_id)
+        except AnalysisNotFoundError:
+            record = {"analysis_id": analysis_id}
+        record["status"] = "failed"
+        record["message"] = str(exc)
+        record["error_kind"] = type(exc).__name__
+        record["progress"] = {"stage": "failed", "frames_processed": 0, "total_frames": 0, "percent": 0.0}
+        write_json(self._record_path(analysis_id), record)
 
     def create_from_upload(
         self,
@@ -116,6 +296,7 @@ class AnalysisService:
         original_filename: str | None = None,
         video_url: str | None = None,
         uploaded_video_path: str | None = None,
+        progress_callback: Callable[[str, int, int], None] | None = None,
     ) -> dict[str, object]:
         result_path = self._result_path(analysis_id)
         annotated_video_path = self._annotated_video_path(analysis_id)
@@ -127,7 +308,11 @@ class AnalysisService:
             annotated_video_path=annotated_video_path,
             annotated_video_url=annotated_video_url,
         )
-        result = self._runner(request)
+        result = (
+            self._runner(request, progress_callback)
+            if progress_callback is not None
+            else self._runner(request)
+        )
         result = _normalize_result(result)
         public_result = _public_result(result)
         if annotated_video_path.exists():
@@ -170,7 +355,6 @@ class AnalysisService:
             "processing_profile": result["processing_profile"],
             "annotated_video_url": result["annotated_video_url"],
             "tracks": result["tracks"],
-            "qualified_tracks": result.get("qualified_tracks", []),
             "events": result["events"],
             "message": result["message"],
             "video_path": str(video_path),
@@ -178,6 +362,13 @@ class AnalysisService:
             "source": source,
             "summary": _summarize_result(result),
             "result": public_result,
+            "created_at": datetime.now(UTC).isoformat(),
+            "progress": {
+                "stage": "completed",
+                "frames_processed": int(result["frames_processed"] or 0),
+                "total_frames": int(result["frames_processed"] or 0),
+                "percent": 100.0,
+            },
         }
         if original_filename is not None:
             record["original_filename"] = original_filename
@@ -211,6 +402,64 @@ class AnalysisService:
         if not isinstance(payload, dict):
             raise AnalysisNotFoundError(f"analysis record is invalid: {analysis_id}")
         return payload
+
+    def get_frames(self, analysis_id: str) -> list[dict[str, object]]:
+        """Full per-frame trace from the on-disk result file.
+
+        Kept out of the analysis response (see _public_result) because it is
+        large; exposed here for debugging and offline inspection.
+        """
+
+        result_path = self._result_path(analysis_id)
+        if not result_path.exists():
+            raise AnalysisNotFoundError(f"analysis frames not found: {analysis_id}")
+        with result_path.open("r", encoding="utf-8") as result_file:
+            payload = json.load(result_file)
+        frames = payload.get("frames") if isinstance(payload, dict) else None
+        return frames if isinstance(frames, list) else []
+
+    def list_analyses(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        """Paginated summary of stored analyses, newest first.
+
+        Records already accumulate on disk; without this they were simply
+        unreachable from the UI.
+        """
+
+        record_paths = [
+            path
+            for path in self.output_dir.glob("*.json")
+            if not path.name.endswith(".result.json")
+        ]
+        record_paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        total = len(record_paths)
+
+        items: list[dict[str, object]] = []
+        for path in record_paths[offset : offset + limit]:
+            try:
+                with path.open("r", encoding="utf-8") as record_file:
+                    record = json.load(record_file)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(record, dict):
+                continue
+            summary = record.get("summary")
+            summary_record = summary if isinstance(summary, dict) else {}
+            items.append(
+                {
+                    "analysis_id": record.get("analysis_id", path.stem),
+                    "status": record.get("status", "unknown"),
+                    "created_at": _record_created_at(record, path),
+                    "original_filename": record.get("original_filename"),
+                    "source": record.get("source"),
+                    "qualified_subject_count": summary_record.get("qualified_subject_count"),
+                    "mobility_event_count": summary_record.get("mobility_event_count"),
+                    "scene_reliability": record.get("scene_reliability"),
+                    "top_severity": _top_severity(record.get("events")),
+                    "annotated_video_url": record.get("annotated_video_url"),
+                }
+            )
+
+        return {"total": total, "limit": limit, "offset": offset, "items": items}
 
     def _record_path(self, analysis_id: str) -> Path:
         safe_id = _safe_uuid(analysis_id)
@@ -255,6 +504,45 @@ class AnalysisService:
         if not resolved_path.exists() or not resolved_path.is_file():
             raise VideoOpenError("Video file not found.")
         return self.sample_dir / relative_path
+
+
+_SEVERITY_RANK = {
+    "high": 0,
+    "review_needed": 1,
+    "medium": 2,
+    "insufficient_evidence": 3,
+    "normal": 4,
+    "low": 5,
+}
+
+
+def _top_severity(events: object) -> str | None:
+    """Most severe severity present, or None. Never fails toward green."""
+
+    if not isinstance(events, list):
+        return None
+    best: str | None = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        severity = event.get("severity")
+        if not isinstance(severity, str):
+            continue
+        if best is None or _SEVERITY_RANK.get(severity, 99) < _SEVERITY_RANK.get(best, 99):
+            best = severity
+    return best
+
+
+def _record_created_at(record: dict[str, object], path: Path) -> str:
+    created = record.get("created_at")
+    if isinstance(created, str) and created.strip():
+        return created
+    result = record.get("result")
+    if isinstance(result, dict):
+        nested = result.get("created_at")
+        if isinstance(nested, str) and nested.strip():
+            return nested
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
 
 
 def _safe_uuid(value: str) -> str:
@@ -497,12 +785,31 @@ def _normalize_result(result: dict[str, object]) -> dict[str, object]:
 
 
 def _public_result(result: dict[str, object]) -> dict[str, object]:
+    """Strip the response down to what a client actually renders.
+
+    ``frames`` holds one dict per frame with every detection, track and
+    feature — a full per-frame trace. It is genuinely useful for debugging and
+    costs nothing on disk, but shipping it over the wire made analysis
+    responses reach several megabytes for a 20-second clip, which the browser
+    then had to parse. Everything the UI draws is already in ``tracks``:
+    ``tracks[].trajectory`` carries the timestamped centre points.
+
+    The full trace stays in ``outputs/analyses/<id>.result.json`` and is
+    served by ``GET /analyses/{id}/frames`` for the debug case.
+    """
+
     payload = dict(result)
     video = payload.get("video")
     if isinstance(video, dict):
         public_video = dict(video)
         public_video.pop("path", None)
         payload["video"] = public_video
+    # tracks / qualified_tracks / events are already top-level fields on the
+    # record. Leaving them here too serialised the track list three times —
+    # ~296 KB of a 317 KB response for a 20s clip. qualified_tracks is
+    # additionally derivable from each track's own `qualified` flag.
+    for duplicated in ("frames", "tracks", "qualified_tracks", "events"):
+        payload.pop(duplicated, None)
     return payload
 
 

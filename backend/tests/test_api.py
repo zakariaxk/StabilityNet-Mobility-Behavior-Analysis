@@ -91,7 +91,12 @@ class ApiTests(unittest.TestCase):
             self.assertNotIn("path", created["result"]["video"])
             self.assertEqual(created["result"]["analysis_version"], "test")
             self.assertEqual(created["result"]["status"], "completed")
-            self.assertEqual(created["result"]["events"][0]["event_type"], "Slow walking")
+            # tracks/events live at the record top level; `result` no longer
+            # duplicates them (that tripled the payload — see _public_result).
+            self.assertNotIn("events", created["result"])
+            self.assertNotIn("tracks", created["result"])
+            self.assertNotIn("frames", created["result"])
+            self.assertEqual(created["events"][0]["event_type"], "Slow walking")
             self.assertEqual(created["summary"]["frames_processed"], 0)
             self.assertEqual(created["summary"]["track_count"], 0)
             self.assertEqual(created["summary"]["event_count"], 1)

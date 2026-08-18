@@ -128,8 +128,8 @@ export default function StabilityNetPage() {
   const tracks = useMemo(() => analysisTracks(analysis), [analysis]);
   const events = useMemo(() => analysisEvents(analysis), [analysis]);
   const trackRows = useMemo(
-    () => buildTrackRows(tracks, analysis?.result?.frames, events),
-    [analysis?.result?.frames, events, tracks]
+    () => buildTrackRows(tracks, events),
+    [events, tracks]
   );
   const annotatedVideoUrl = analysis ? analysisVideoUrl(analysis) : null;
   const hasAnalysisResult = analysis !== null;
@@ -1177,12 +1177,12 @@ function PipelineSection() {
   );
 }
 
-function buildTrackRows(
-  tracks: TrackSummary[],
-  frames: unknown[] | undefined,
-  events: BehaviorEvent[]
-): TrackRow[] {
-  const observationsByTrack = observationsFromFrames(frames);
+// Trajectories come from tracks[].trajectory, which the pipeline already
+// populates. The previous implementation reconstructed them by walking the
+// per-frame trace, which is why the API had to ship several megabytes of
+// frames to the browser on every analysis.
+function buildTrackRows(tracks: TrackSummary[], events: BehaviorEvent[]): TrackRow[] {
+  const observationsByTrack = new Map<number, TrackPoint[]>();
   const eventCounts = eventCountsByTrack(events);
   const ids = new Set<number>();
 
@@ -1346,42 +1346,6 @@ function parseTrajectoryPoint(value: unknown): TrackPoint | undefined {
   };
 }
 
-function observationsFromFrames(
-  frames: unknown[] | undefined
-): Map<number, TrackPoint[]> {
-  const observations = new Map<number, TrackPoint[]>();
-
-  for (const frame of safeUnknownArray(frames)) {
-    if (!isRecord(frame)) {
-      continue;
-    }
-    const frameTimestamp = readNumber(frame, "timestamp_s");
-    for (const track of safeUnknownArray(frame.tracks)) {
-      if (!isRecord(track)) {
-        continue;
-      }
-      const trackId = readNumber(track, "track_id");
-      if (trackId === undefined) {
-        continue;
-      }
-      const center = readCenter(track.center) ?? readCenter(readRecord(track, "bbox")?.center);
-      if (!center) {
-        continue;
-      }
-      const list = observations.get(trackId) ?? [];
-      list.push({
-        x: center[0],
-        y: center[1],
-        confidence: readNumber(track, "confidence"),
-        timestamp: readNumber(track, "timestamp_s") ?? frameTimestamp
-      });
-      observations.set(trackId, list);
-    }
-  }
-
-  return observations;
-}
-
 function trajectoryPolyline(points: TrackPoint[]): string {
   const visiblePoints = points.slice(-24);
   const xValues = visiblePoints.map((point) => point.x);
@@ -1435,9 +1399,6 @@ function safeArray<T>(value: T[] | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-function safeUnknownArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
 
 function numberOrZero(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;

@@ -28,6 +28,15 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--video", required=True, type=Path, help="Path to a video file.")
     analyze.add_argument("--output", required=True, type=Path, help="Path for JSON output.")
     analyze.add_argument(
+        "--annotated-video",
+        type=Path,
+        default=None,
+        help=(
+            "Optional path for the annotated H.264 output video. Requires "
+            "ffmpeg on PATH."
+        ),
+    )
+    analyze.add_argument(
         "--detector-model",
         default=DEFAULT_DETECTOR_MODEL,
         help=(
@@ -52,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
             config=PipelineConfig(
                 detector=DetectorConfig(model_name=args.detector_model),
             ),
+            annotated_video_path=args.annotated_video,
         )
         try:
             result = analyze_video(request)
@@ -61,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
             "analysis written to "
             f"{args.output} ({result['frames_processed']} frames processed)"
         )
+        if args.annotated_video is not None:
+            print(f"annotated video written to {args.annotated_video}")
         return 0
 
     parser.print_help()

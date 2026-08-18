@@ -77,6 +77,10 @@ export interface AnalysisResult {
   message?: string | null;
   video?: AnalysisVideoMetadata;
   frames_processed?: number;
+  /**
+   * Per-frame trace. No longer returned by the API — it made responses
+   * several MB. Fetch GET /analyses/{id}/frames if you need it for debugging.
+   */
   frames?: unknown[];
   tracks?: TrackSummary[];
   events?: BehaviorEvent[];

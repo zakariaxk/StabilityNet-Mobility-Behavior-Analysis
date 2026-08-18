@@ -142,6 +142,33 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
                     all_observations.extend(analysis_observations)
 
                     event_started_at = time.perf_counter()
+
+                    # Uncertainty events, computed against the previous
+                    # analysis frame. These were written but never called, so
+                    # the "camera motion uncertainty" branch of
+                    # _scene_reliability scored a condition that could not
+                    # occur, and the two track-end event types were handled
+                    # everywhere downstream while nothing ever emitted them.
+                    camera_motion_event = _camera_motion_uncertainty_event(
+                        previous_observations=previous_analysis_observations,
+                        current_observations=analysis_observations,
+                        frame_width=metadata.width,
+                        frame_height=metadata.height,
+                        timestamp_s=frame.timestamp_s,
+                    )
+                    if camera_motion_event is not None:
+                        add_event(camera_motion_event)
+
+                    for track_end_event in _track_end_events(
+                        previous_observations=previous_analysis_observations,
+                        current_observations=analysis_observations,
+                        latest_features=latest_features,
+                        frame_width=metadata.width,
+                        frame_height=metadata.height,
+                        timestamp_s=frame.timestamp_s,
+                    ):
+                        add_event(track_end_event)
+
                     for observation in analysis_observations:
                         history = track_store.update(observation)
                         features = extract_features(history, request.config.behavior)
@@ -659,7 +686,7 @@ def _display_events(
         )
         display_events.append(normalized_event)
 
-    merged_events = _merge_nearby_events(display_events)
+    merged_events = _aggregate_uncertainty_events(_merge_nearby_events(display_events))
     merged_events.sort(
         key=lambda event: (
             event.display_priority,
@@ -743,6 +770,53 @@ def _event_priority(event_type: str, severity: str) -> int:
     if severity == "insufficient_evidence":
         return 65
     return 85
+
+
+# Track-end uncertainty is per-track by nature: a crowded scene ends dozens of
+# short tracks and would emit one event each, burying the handful of findings
+# that matter. These types collapse to a single summary row carrying a count.
+_AGGREGATE_EVENT_TYPES = {
+    "Insufficient visual evidence",
+    "Track ended near frame boundary",
+}
+
+
+def _aggregate_uncertainty_events(events: list[BehaviorEvent]) -> list[BehaviorEvent]:
+    """Collapse per-track uncertainty events into one row per type."""
+
+    kept: list[BehaviorEvent] = []
+    first_of_type: dict[str, BehaviorEvent] = {}
+    counts: dict[str, int] = {}
+
+    for event in events:
+        if event.event_type not in _AGGREGATE_EVENT_TYPES:
+            kept.append(event)
+            continue
+        counts[event.event_type] = counts.get(event.event_type, 0) + event.merged_count
+        if event.event_type not in first_of_type:
+            first_of_type[event.event_type] = event
+
+    for event_type, representative in first_of_type.items():
+        count = counts[event_type]
+        reason = representative.reason
+        if count > 1:
+            reason = f"{reason} Affected {count} tracks in this clip."
+        kept.append(
+            BehaviorEvent(
+                event_id=representative.event_id,
+                track_id=representative.track_id,
+                event_type=event_type,
+                severity=representative.severity,
+                score=representative.score,
+                timestamp_s=representative.timestamp_s,
+                reason=reason,
+                feature_snapshot=representative.feature_snapshot,
+                confidence=representative.confidence,
+                display_priority=representative.display_priority,
+                merged_count=count,
+            )
+        )
+    return kept
 
 
 def _merge_nearby_events(events: list[BehaviorEvent]) -> list[BehaviorEvent]:
@@ -906,24 +980,6 @@ def _camera_motion_uncertainty_event(
             "mean_shift_px": round(mean_magnitude, 3),
             "coherence": round(coherence, 3),
         },
-    )
-
-
-def _insufficient_evidence_event(
-    *,
-    observation: TrackObservation,
-    features: BehaviorFeatures,
-    timestamp_s: float,
-) -> BehaviorEvent | None:
-    if observation.confidence >= 0.42 and features.observations >= 5:
-        return None
-    return _custom_event(
-        track_id=observation.track_id,
-        event_type="Insufficient visual evidence",
-        severity="insufficient_evidence",
-        timestamp_s=timestamp_s,
-        reason="Low-confidence or fragmented track; requires review.",
-        feature_snapshot=features.to_dict(),
     )
 
 

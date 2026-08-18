@@ -113,6 +113,32 @@ def upload_analysis(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@router.get("/analyses")
+def list_analyses(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, object]:
+    """Paginated list of stored analyses, newest first."""
+
+    service = _analysis_service(request)
+    bounded_limit = max(1, min(200, limit))
+    bounded_offset = max(0, offset)
+    return service.list_analyses(limit=bounded_limit, offset=bounded_offset)
+
+
+@router.get("/analyses/{analysis_id}/frames")
+def get_analysis_frames(analysis_id: str, request: Request) -> dict[str, object]:
+    """Full per-frame trace. Large — excluded from the analysis response."""
+
+    service = _analysis_service(request)
+    try:
+        frames = service.get_frames(analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"analysis_id": analysis_id, "frames": frames}
+
+
 @router.get("/analyses/{analysis_id}", response_model=AnalysisRecord)
 def get_analysis(analysis_id: str, request: Request) -> dict[str, object]:
     service = _analysis_service(request)

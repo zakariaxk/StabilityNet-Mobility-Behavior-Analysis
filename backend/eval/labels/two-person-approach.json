@@ -1,0 +1,8 @@
+{
+  "clip": "samples/two-person-approach.mp4",
+  "duration_s": 12.1,
+  "description": "NEGATIVE CONTROL. Two people walk side by side toward the camera for the entire clip, talking over a document. No fall, no stop, no transition. Also exercises tracking with two simultaneous subjects.",
+  "labelled_by": "frame inspection at 1 fps",
+  "positive": false,
+  "events": []
+}

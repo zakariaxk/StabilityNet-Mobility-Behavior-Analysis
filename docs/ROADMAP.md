@@ -14,10 +14,12 @@
 - Add FastAPI endpoints for health, MP4 upload, video submission, and result retrieval.
 - Keep processing synchronous until pipeline behavior is stable.
 
-## Phase 3: Jobs And Persistence
+## Phase 3: Jobs And Persistence — **REVISED, Redis/Postgres DEFERRED**
 
-- Add Redis-backed job state or queueing.
-- Add PostgreSQL analysis records and event storage.
+Done differently: a module-level single-worker `ThreadPoolExecutor` plus the
+JSON records already written to disk. That solves the actual problem — a
+blocking HTTP request with no progress — without adding a queue broker or a
+database to a single-machine local tool. See ADR-011.
 
 ## Phase 4: Review UI
 

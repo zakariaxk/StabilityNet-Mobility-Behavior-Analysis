@@ -701,7 +701,20 @@ def _display_events(
         )
         display_events.append(normalized_event)
 
-    merged_events = _aggregate_uncertainty_events(_merge_nearby_events(display_events))
+    # When the scene itself is moving, per-track position variance has a
+    # single shared explanation, and reporting it once per subject presents
+    # one camera pan as a dozen independent findings. Measured on
+    # samples/assisted-walk-sit.mp4: 19 "Abrupt trajectory change" rows for
+    # one hand-held sequence. The detection is unchanged — only the
+    # presentation collapses, and the count is preserved on the row.
+    camera_motion_detected = any(
+        event.event_type == "Camera motion uncertainty" for event in display_events
+    )
+    extra_types = {"Abrupt trajectory change"} if camera_motion_detected else None
+    merged_events = _aggregate_uncertainty_events(
+        _merge_nearby_events(display_events),
+        extra_types=extra_types,
+    )
     merged_events.sort(
         key=lambda event: (
             event.display_priority,
@@ -796,15 +809,20 @@ _AGGREGATE_EVENT_TYPES = {
 }
 
 
-def _aggregate_uncertainty_events(events: list[BehaviorEvent]) -> list[BehaviorEvent]:
+def _aggregate_uncertainty_events(
+    events: list[BehaviorEvent],
+    *,
+    extra_types: set[str] | None = None,
+) -> list[BehaviorEvent]:
     """Collapse per-track uncertainty events into one row per type."""
 
+    aggregate_types = _AGGREGATE_EVENT_TYPES | (extra_types or set())
     kept: list[BehaviorEvent] = []
     first_of_type: dict[str, BehaviorEvent] = {}
     counts: dict[str, int] = {}
 
     for event in events:
-        if event.event_type not in _AGGREGATE_EVENT_TYPES:
+        if event.event_type not in aggregate_types:
             kept.append(event)
             continue
         counts[event.event_type] = counts.get(event.event_type, 0) + event.merged_count

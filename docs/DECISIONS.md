@@ -75,3 +75,53 @@ matching, precision, recall, F1, false alarms per minute, and timing error. Majo
 tracker or scoring changes should be justified against labeled held-out clips
 and synthetic invariance tests rather than tuned only to the four demo videos.
 These metrics evaluate prototype behavior and do not establish clinical validity.
+
+
+## ADR-011: Background Jobs Via A Thread Pool, Not Redis
+
+Analysis ran inside the HTTP request, so an upload blocked for the full
+pipeline — inference plus an ffmpeg transcode — with no progress and no
+cancel. ADR-005 accepted that while the pipeline was stabilising.
+
+The fix is a module-level `ThreadPoolExecutor(max_workers=1)` and a `progress`
+object persisted onto the existing JSON record. Submission returns `202`; the
+client polls. No Redis, no Celery, no database.
+
+One worker on purpose: analyses are CPU-bound, so concurrent workers make
+every analysis slower and deliver no result sooner. Queueing is the honest
+behaviour and it is what the API reports.
+
+Consequence: mid-pipeline failures can no longer be HTTP status codes. They
+are recorded on the record as `status: "failed"` with `message` and
+`error_kind`. Pre-flight validation stays synchronous.
+
+## ADR-012: The API Does Not Return The Per-Frame Trace
+
+`result["frames"]` carries one entry per frame with every detection, track and
+feature. Returning it made analysis responses reach several megabytes, which
+the browser then parsed to reconstruct trajectories that `tracks[].trajectory`
+already contained.
+
+The response now omits `frames`, `tracks`, `qualified_tracks` and `events`
+from the nested `result` object — all four are already top-level record
+fields, and `tracks` was being serialised three times per response. The full
+trace still goes to `outputs/analyses/<id>.result.json` and is served by
+`GET /analyses/{id}/frames`.
+
+Measured on `samples/warehouse-fall.mp4`: 1.6 MB trace on disk, 105 KB
+response.
+
+## ADR-013: Scene-Level Causes Are Reported Once, Not Per Subject
+
+When camera motion is detected in a clip, per-track position variance has a
+single shared explanation. Reporting `Abrupt trajectory change` per subject
+turned one hand-held sequence into 19 independent-looking findings on
+`assisted-walk-sit.mp4`.
+
+Those rows now collapse to one entry carrying a count when camera motion was
+detected in the same clip. The same aggregation applies to the two track-end
+uncertainty types, which are per-track by nature.
+
+Detection is unchanged — this is presentation only, and
+`docs/EVALUATION_RESULTS.md` records that precision, recall, F1 and timing
+error were identical before and after.

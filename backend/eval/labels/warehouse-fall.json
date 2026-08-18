@@ -1,0 +1,10 @@
+{
+  "clip": "samples/warehouse-fall.mp4",
+  "duration_s": 11.72,
+  "description": "Two warehouse workers handling boxes. One collapses to the floor around t=3-4s; the other notices and kneels to assist from roughly t=6s onward.",
+  "labelled_by": "frame inspection at 1 fps",
+  "positive": true,
+  "events": [
+    { "event_type": "Fall-like motion event", "track_id": 0, "timestamp_s": 3.5 }
+  ]
+}

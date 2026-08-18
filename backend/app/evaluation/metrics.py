@@ -40,11 +40,18 @@ def evaluate_events(
     *,
     duration_s: float,
     tolerance_s: float = 1.0,
+    require_track_match: bool = True,
 ) -> EventMetrics:
     """Match events one-to-one by type, subject, and nearest timestamp.
 
     This is an engineering benchmark, not a clinical validation metric. A
     prediction can match at most one label and vice versa.
+
+    ``require_track_match`` exists because tracker IDs are assigned at runtime
+    and are not knowable when a clip is labelled by hand. Clip-level
+    evaluation — "was the fall detected at roughly the right moment?" — sets
+    it False and matches on event type and time only. Leave it True when
+    labels carry real per-subject identities.
     """
 
     if not isfinite(duration_s) or duration_s <= 0.0:
@@ -60,7 +67,7 @@ def evaluate_events(
             (abs(predictions[index].timestamp_s - label.timestamp_s), index)
             for index in unmatched_predictions
             if predictions[index].event_type == label.event_type
-            and predictions[index].track_id == label.track_id
+            and (not require_track_match or predictions[index].track_id == label.track_id)
             and abs(predictions[index].timestamp_s - label.timestamp_s) <= tolerance_s
         ]
         if not candidates:

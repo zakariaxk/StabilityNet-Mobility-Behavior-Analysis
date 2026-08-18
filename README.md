@@ -28,7 +28,7 @@ Every component is independently testable. The pipeline has no dependency on the
 
 **Analysis resolution:** frames are downscaled to a max width of 640px before inference to control CPU throughput. The original frame is used for annotation output (up to 1280px wide).
 
-**Frame sampling:** at high source FPS, the pipeline computes an effective analysis stride so that analysis runs at approximately 22 FPS regardless of source frame rate. Every frame is written to the annotated output; only analysis-stride frames run detection and tracking. Non-analysis frames reuse the previous observation set with a small confidence decay (0.96×).
+**Frame sampling:** at high source FPS, the pipeline computes an effective analysis stride so that analysis is *sampled* at a target 22 FPS regardless of source frame rate (configurable via `STABILITYNET_ANALYSIS_TARGET_FPS`). This is a sampling cadence, not measured throughput — actual processing speed is reported per run as `cpu_analysis_throughput_fps`. See `docs/BENCHMARK.md`. Every frame is written to the annotated output; only analysis-stride frames run detection and tracking. Non-analysis frames reuse the previous observation set with a small confidence decay (0.96×).
 
 **Confidence threshold:** 0.35. Detections below this are discarded before tracking.
 
@@ -165,6 +165,13 @@ The `yuv420p` pixel format and `+faststart` flag are required for browser autopl
 ### Setup
 
 ```bash
+cd backend && ./scripts/bootstrap.sh
+```
+
+Creates the virtualenv, installs dependencies, checks for ffmpeg with the
+right instruction for your OS, and downloads the model weights. Or by hand:
+
+```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
@@ -244,11 +251,28 @@ python -m app.cli analyze \
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Detector model status, configured path, auto-download availability |
-| `POST` | `/analyses` | Run pipeline on a local sample path; returns full analysis record |
-| `POST` | `/analyses/upload` | Upload an MP4 file; runs pipeline synchronously; returns full analysis record |
-| `GET` | `/analyses/{id}` | Retrieve a saved analysis record by UUID |
+| `GET` | `/analyses` | Paginated list of stored analyses, newest first |
+| `POST` | `/analyses` | Queue analysis of a local sample path; returns `202` with a `processing` record |
+| `POST` | `/analyses/upload` | Upload an MP4; queues analysis; returns `202` with a `processing` record |
+| `GET` | `/analyses/{id}` | Retrieve a record by UUID, including live `progress` while it runs |
+| `GET` | `/analyses/{id}/frames` | Full per-frame trace (large; excluded from the analysis response) |
 | `GET` | `/analyses/{id}/video` | Stream the uploaded source MP4 for the given analysis |
 | `GET` | `/outputs/{filename}` | Static file serve for annotated output videos |
+
+### Background execution
+
+Analysis runs on a single-worker `ThreadPoolExecutor`, not inside the HTTP
+request. Submission returns `202` immediately with `status: "processing"`, and
+the client polls `GET /analyses/{id}` for a real `progress` object
+(`stage`, `frames_processed`, `total_frames`, `percent`).
+
+One worker is deliberate: analyses are CPU-bound, so running several at once
+makes all of them slower and gives no user a result sooner.
+
+Failures that happen mid-pipeline land on the record as `status: "failed"`
+with `message` and `error_kind`, because the HTTP request is long gone by
+then. Validation that can be done up front (bad path, non-MP4, empty upload)
+still fails synchronously with `400`.
 
 Analysis records are stored as JSON files under `backend/outputs/analyses/`. Uploaded source videos are stored under `backend/outputs/uploads/`. Annotated output videos are stored under `backend/outputs/videos/`.
 
@@ -279,10 +303,12 @@ Analysis records are stored as JSON files under `backend/outputs/analyses/`. Upl
 ### Tests
 
 ```bash
-python -m unittest discover -s tests
+python -m pytest -q
 ```
 
-26 tests covering: feature extraction math, event scoring thresholds, tracker IoU matching and track expiry, pipeline policy (qualification, event merge, scene reliability), annotated video ffmpeg command shape, CLI argument parsing, and API integration with a fake pipeline runner.
+56 tests covering: feature extraction math, event scoring thresholds, tracker IoU matching and track expiry, pipeline policy (qualification, event merge, scene reliability), annotated video ffmpeg command shape, CLI argument parsing, API integration with a fake pipeline runner, and background job submission/progress/failure recording.
+
+The suite is model-free by design — it needs no weights, no OpenCV and no ffmpeg — which is why it runs in CI.
 
 ---
 
@@ -292,7 +318,7 @@ python -m unittest discover -s tests
 
 - Next.js 16 / React 19 / TypeScript 6
 - No component library — all styling in `globals.css`
-- No test suite — `typecheck` and `eslint` are the only checks
+- Vitest for pure presentation logic; `typecheck`, `eslint` and `build` also gate CI
 
 ### Setup
 
@@ -406,3 +432,23 @@ pix_fmt=yuv420p
 ## Language Policy
 
 All event labels and UI copy use **"mobility risk indicator"** and **"fall-like motion event"**. The strings "fall detected" and "diagnosis" do not appear anywhere in the codebase. The frontend sidebar displays "Not a medical device."
+
+
+---
+
+## Evaluation
+
+Thresholds are measured against hand-labelled clips rather than tuned by eye:
+
+```bash
+cd backend && source .venv/bin/activate
+python eval/run_eval.py --tolerance 1.5
+```
+
+Current results — recall 1.00 at 0.63s mean timing error, and **zero fall
+events on both negative-control clips**. Precision is 0.40, driven by three
+`Postural Transition` false positives on the assisted-walk clip, recorded as a
+measured limitation rather than tuned away.
+
+Full numbers, method, and caveats: `docs/EVALUATION_RESULTS.md`. Four clips is
+not a validation set and establishes nothing about clinical validity.

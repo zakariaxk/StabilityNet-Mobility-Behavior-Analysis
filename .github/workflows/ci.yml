@@ -22,10 +22,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      # The suite is deliberately model-free: behaviour maths runs on plain
-      # dataclasses and the API tests inject a fake pipeline runner, so no
-      # weights, no OpenCV, and no ffmpeg are needed here. That is the whole
-      # reason it can run in CI at all.
+      # The suite is deliberately model-weight-free: behaviour maths runs on
+      # plain dataclasses and the API tests inject a fake pipeline runner, so no
+      # weights download and no ffmpeg are needed to run the tests. (Backend deps
+      # still include opencv-python and ultralytics/torch; they install but the
+      # tests never exercise them.)
       - name: Install backend
         working-directory: backend
         run: python -m pip install -e ".[dev]"
@@ -65,4 +66,4 @@ jobs:
 
       - name: Build
         working-directory: frontend
-        run: npm run build -- --webpack
+        run: npm run build

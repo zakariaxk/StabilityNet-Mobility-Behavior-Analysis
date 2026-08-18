@@ -19,14 +19,14 @@ python3 -m app.cli analyze --video samples/test-video.mp4 --output outputs/resul
 ```
 
 ```bash
-# Full backend test suite
-python3 -m unittest discover -s tests
+# Full backend test suite (tests are unittest.TestCase style, run via pytest — as CI does)
+python3 -m pytest -q
 
 # Single backend test file
-python3 -m unittest tests.test_api
+python3 -m pytest -q tests/test_api.py
 
 # Single backend test method
-python3 -m unittest tests.test_api.ApiTests.test_rejects_missing_sample_path
+python3 -m pytest -q tests/test_api.py::ApiTests::test_rejects_missing_sample_path
 ```
 
 ```bash
@@ -42,9 +42,10 @@ npm run dev
 npm run lint
 npm run typecheck
 npm run build
+npm run test
 ```
 
-No dedicated frontend test script is configured in `frontend/package.json` currently.
+A Vitest-based frontend test script is configured in `frontend/package.json` (`npm run test`).
 
 ## High-level architecture
 

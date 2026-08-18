@@ -1,5 +1,15 @@
 # StabilityNet — Finishing Implementation Plan
 
+> **Status 2026-08-17:** S1–S3, S5–S7, S10, S13, S14 are **implemented and
+> merged to `finishing-plan-implementation`** (PR #4). Backend 49 → 56 tests,
+> CI added and green, API response 1.6 MB → 105 KB, submission 11.6 s → 39 ms.
+> Remaining: **S4** (normalization sprawl), **S8** (split the 1,700-line page
+> component), **S9** (unify overlay tone with scorer physics — now unblocked,
+> since S5 can prove no metric drift), **S11** (synthetic-frame pipeline
+> integration test), **S12** (throughput benchmark), **S15** (remaining docs),
+> **SF1/SF2** (threshold sweep, synced timeline).
+> Deployment stays local by design — see §9.
+
 Audit date: 2026-08-17 · Repo @ `0e6ca70` (clean)
 Companion plan for the sibling project: `Waypoints/docs/FINISHING_PLAN.md`
 

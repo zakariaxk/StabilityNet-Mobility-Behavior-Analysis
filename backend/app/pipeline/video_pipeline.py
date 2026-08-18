@@ -6,7 +6,7 @@ import logging
 import math
 import time
 from datetime import UTC, datetime
-from typing import TypedDict
+from typing import Callable, TypedDict
 
 from app.behavior.events import BehaviorEvent
 from app.behavior.features import BehaviorFeatures, extract_features
@@ -43,7 +43,13 @@ class _FinalizedAnalysisPolicy(TypedDict):
     events_suppressed_count: int
 
 
-def analyze_video(request: AnalysisRequest) -> dict[str, object]:
+ProgressCallback = Callable[[str, int, int], None]
+
+
+def analyze_video(
+    request: AnalysisRequest,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, object]:
     """Probe a video and write a Phase 1B analysis payload.
 
     Detection, tracking, and behavior scoring are added in later Phase 1 steps.
@@ -246,7 +252,14 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
                 }
             )
             frames_processed += 1
+            if progress_callback is not None and frames_processed % 10 == 0:
+                progress_callback("analyzing", frames_processed, metadata.frame_count)
         frame_loop_seconds = time.perf_counter() - frame_loop_started_at
+
+    if progress_callback is not None:
+        # The ffmpeg transcode happens on AnnotatedVideoWriter exit, which is
+        # the slow tail users were staring at with no feedback.
+        progress_callback("encoding", frames_processed, metadata.frame_count)
     timing_seconds["encode"] = annotated_writer.transcode_seconds
 
     if frames_processed == 0:
@@ -379,6 +392,8 @@ def analyze_video(request: AnalysisRequest) -> dict[str, object]:
             "annotated_output_max_width": request.config.annotated_output_max_width,
         },
     }
+    if progress_callback is not None:
+        progress_callback("finalizing", frames_processed, metadata.frame_count)
     write_json(request.output_path, result)
     logger.info(
         "analysis completed",

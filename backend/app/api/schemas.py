@@ -44,4 +44,7 @@ class AnalysisRecord(BaseModel):
     original_filename: str | None = None
     video_url: str | None = None
     summary: dict[str, Any] = Field(default_factory=dict)
-    result: dict[str, Any]
+    # Empty while a job is queued or running; populated on completion.
+    result: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+    progress: dict[str, Any] = Field(default_factory=dict)

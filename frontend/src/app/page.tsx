@@ -11,12 +11,14 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  AnalysisProgress,
   AnalysisRecord,
   BehaviorEvent,
   TrackSummary,
   analysisVideoUrl,
   checkHealth,
   createAnalysis,
+  pollAnalysis,
   uploadAnalysis
 } from "@/lib/stabilityNetApi";
 import {
@@ -29,13 +31,19 @@ import { severityPresentation } from "@/lib/analysisPresentation";
 const FALLBACK_ANALYSIS_ERROR =
   "Upload an MP4 file or select a sample video before running analysis.";
 
-const PROCESSING_STAGES = [
-  "Uploading video...",
-  "Running person detection...",
-  "Tracking subjects...",
-  "Analyzing motion events...",
-  "Preparing annotated output..."
-] as const;
+/**
+ * Labels for the stages the backend actually reports via record.progress.stage.
+ * This used to be a five-item list advanced by a 1800ms setInterval with no
+ * relationship to the backend at all, so on a slow clip it sat on the last
+ * label for minutes.
+ */
+const STAGE_LABELS: Record<string, string> = {
+  queued: "Queued...",
+  analyzing: "Running detection and tracking...",
+  encoding: "Encoding annotated video...",
+  finalizing: "Finalizing analysis...",
+  completed: "Complete"
+};
 
 type HealthState =
   | { state: "checking"; label: "Checking" }
@@ -78,7 +86,7 @@ export default function StabilityNetPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [processingStageIndex, setProcessingStageIndex] = useState(0);
+  const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [selectedEventKey, setSelectedEventKey] = useState<string | null>(null);
 
@@ -105,20 +113,6 @@ export default function StabilityNetPage() {
       isCurrent = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!isSubmitting) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      setProcessingStageIndex((currentIndex) =>
-        Math.min(currentIndex + 1, PROCESSING_STAGES.length - 1)
-      );
-    }, 1800);
-
-    return () => window.clearInterval(intervalId);
-  }, [isSubmitting]);
 
   const selectedSample = useMemo(
     () =>
@@ -205,13 +199,19 @@ export default function StabilityNetPage() {
     }
 
     setError(null);
-    setProcessingStageIndex(videoFile ? 0 : 1);
+    setProgress({ stage: "queued", percent: 0 });
     setIsSubmitting(true);
 
     try {
-      const record = videoFile
+      // Submission returns 202 with a queued record; the result arrives by
+      // polling. Progress numbers below are the backend's, not a timer's.
+      const queued = videoFile
         ? await uploadAnalysis(videoFile)
         : await createAnalysis({ video_path: selectedSample!.videoPath });
+
+      const record = await pollAnalysis(queued.analysis_id, (partial) => {
+        if (partial.progress) setProgress(partial.progress);
+      });
       setSelectedTrackId(null);
       setSelectedEventKey(null);
       setAnalysis(record);
@@ -234,7 +234,7 @@ export default function StabilityNetPage() {
       }
     } finally {
       setIsSubmitting(false);
-      setProcessingStageIndex(0);
+      setProgress(null);
     }
   }
 
@@ -319,9 +319,7 @@ export default function StabilityNetPage() {
             </button>
           </div>
 
-          {isSubmitting ? (
-            <ProcessingPanel activeStageIndex={processingStageIndex} />
-          ) : null}
+          {isSubmitting ? <ProcessingPanel progress={progress} /> : null}
 
           <div className="notice-stack" aria-live="polite">
             {health.state === "error" ? (
@@ -604,23 +602,30 @@ function Alert({
   );
 }
 
-function ProcessingPanel({ activeStageIndex }: { activeStageIndex: number }) {
+function ProcessingPanel({ progress }: { progress: AnalysisProgress | null }) {
+  const stage = progress?.stage ?? "queued";
+  const percent = Math.max(0, Math.min(100, progress?.percent ?? 0));
+  const frames = progress?.frames_processed ?? 0;
+  const total = progress?.total_frames ?? 0;
+
   return (
     <section className="processing-panel" aria-live="polite" aria-label="Analysis status">
       <div>
         <SpinnerIcon />
-        <strong>{PROCESSING_STAGES[activeStageIndex]}</strong>
+        <strong>{STAGE_LABELS[stage] ?? stage}</strong>
       </div>
-      <ol>
-        {PROCESSING_STAGES.map((stage, index) => (
-          <li
-            className={index <= activeStageIndex ? "processing-stage--active" : ""}
-            key={stage}
-          >
-            {stage}
-          </li>
-        ))}
-      </ol>
+      <div
+        className="processing-progress"
+        role="progressbar"
+        aria-valuenow={Math.round(percent)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="processing-progress__bar" style={{ width: `${percent}%` }} />
+      </div>
+      <p className="processing-progress__label">
+        {total > 0 ? `${frames} / ${total} frames · ${percent.toFixed(0)}%` : `${percent.toFixed(0)}%`}
+      </p>
     </section>
   );
 }

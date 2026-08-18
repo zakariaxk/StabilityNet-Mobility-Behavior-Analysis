@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from fastapi import Response
 from fastapi.responses import FileResponse
 
 from app.api.analysis_service import (
@@ -60,11 +61,14 @@ def health(request: Request) -> dict[str, object]:
 def create_analysis(
     payload: AnalysisCreateRequest,
     request: Request,
+    response: Response,
 ) -> dict[str, object]:
     service = _analysis_service(request)
     logger.info("analysis sample request received")
     try:
-        return service.create(payload.video_path)
+        record = service.submit(payload.video_path)
+        response.status_code = status.HTTP_202_ACCEPTED
+        return record
     except VideoOpenError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (DetectorDependencyError, VideoDependencyError) as exc:
@@ -87,6 +91,7 @@ def create_analysis(
 )
 def upload_analysis(
     request: Request,
+    response: Response,
     file: UploadFile | None = File(None),
 ) -> dict[str, object]:
     service = _analysis_service(request)
@@ -97,7 +102,9 @@ def upload_analysis(
         raise HTTPException(status_code=400, detail="Only MP4 video uploads are supported.")
 
     try:
-        return service.create_from_upload(file.filename, file.file)
+        record = service.submit_from_upload(file.filename, file.file)
+        response.status_code = status.HTTP_202_ACCEPTED
+        return record
     except (InvalidUploadError, VideoOpenError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (DetectorDependencyError, VideoDependencyError) as exc:
